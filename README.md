@@ -1,6 +1,6 @@
-# Offload Automation Project (Standalone)
+# Offload Automation (Wireless CE Team Dashboard)
 
-An independent load balancing and offload management automation system for IPS customer cases and issue tracking.
+An independent Wireless CE team loading dashboard and offload management system for IPS customer cases and issue tracking.
 
 ---
 
