@@ -68,6 +68,22 @@ Run `run_offload_reporter_issues.bat` directly or with options:
 run_offload_reporter_issues.bat --send-email
 ```
 
+### Loading Dashboard Backend (IIS API proxy target)
+The IIS site proxies `/api/*` to a local `loading_dashboard.py` server on port 8010
+(see `web.config`). This backend does not start on its own — run `run_loading_dashboard.bat`
+to launch it (it loops and restarts the server if it crashes). To make it survive a
+server reboot, register it as a startup Scheduled Task once (elevated PowerShell):
+```powershell
+powershell -ExecutionPolicy Bypass -File Register-DashboardStartupTask.ps1
+```
+This creates a "Wireless CE Dashboard Backend" task that runs `run_loading_dashboard.bat`
+at every system boot under SYSTEM.
+
+Note: IIS site bindings (physical path, host headers, certificate) are configured directly
+in IIS, not via this repo — if the project folder is ever moved or renamed, the IIS site's
+physical path must be updated to match, or the site will fail with a 500.19 error.
+
+
 ### Batch Runners & Schedulers
 - `run_offload_reporter_issues_send_email_scheduler.bat`: Windows Task Scheduler wrapper with network/VPN reachability checks.
 - `run_offload_csv_watcher.bat`: Local watcher for real-time offload CSV updates.
