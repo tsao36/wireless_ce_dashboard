@@ -3,6 +3,8 @@
 *.key
 *.pem
 *.crt
+*.pfx
+*.p12
 
 # Token cache
 .graph_msal_token_cache.json
