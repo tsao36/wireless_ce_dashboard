@@ -26,8 +26,10 @@ echo [INFO] Args: %*
 rem Use original delegated Graph auth by default (interactive web login)
 if "%GRAPH_AUTH_MODE%"=="" set "GRAPH_AUTH_MODE=delegated"
 if "%OFFLOAD_ALWAYS_EXCLUDED_REPORTERS%"=="" set "OFFLOAD_ALWAYS_EXCLUDED_REPORTERS=Jonathan Tsao"
+set "SKIP_EMAIL=0"
+for %%A in (%*) do if /i "%%~A"=="--no-email" set "SKIP_EMAIL=1"
 
-if /i "%GRAPH_AUTH_MODE%"=="app" (
+if /i "%GRAPH_AUTH_MODE%"=="app" if "%SKIP_EMAIL%"=="0" (
     if "%GRAPH_SENDER_UPN%"=="" (
         if exist "%SCRIPT_DIR%.env" (
             for /f "usebackq tokens=1,* delims==" %%A in ("%SCRIPT_DIR%.env") do (

@@ -55,11 +55,25 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
+    def do_OPTIONS(self) -> None:
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self._add_cors_headers()
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _add_cors_headers(self) -> None:
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
     def _send_json(self, payload: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        self._add_cors_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -156,7 +170,10 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
             if not BATCH_PATH.exists():
                 self._send_json({"running": False, "message": f"Batch file not found: {BATCH_PATH.name}"}, HTTPStatus.NOT_FOUND)
                 return
-            command = ["cmd.exe", "/d", "/c", str(BATCH_PATH)] if os.name == "nt" else ["sh", str(BATCH_PATH)]
+            if os.name == "nt":
+                command = ["cmd.exe", "/d", "/c", f"{BATCH_PATH} --no-email"]
+            else:
+                command = ["sh", str(BATCH_PATH), "--no-email"]
             RUN_PROCESS = subprocess.Popen(command, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             RUN_STARTED_AT = datetime.now().isoformat(timespec="seconds")
             RUN_FINISHED_AT = None
@@ -169,7 +186,7 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Serve the weighted team loading dashboard.")
-    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8010)
     args = parser.parse_args()
     server = ThreadingHTTPServer((args.host, args.port), LoadingDashboardHandler)
