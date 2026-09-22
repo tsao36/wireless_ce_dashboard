@@ -1,4 +1,4 @@
-# Offload Automation (Wireless CE Team Dashboard)
+# Wireless CE Team Dashboard
 
 An independent Wireless CE team loading dashboard and offload management system for IPS customer cases and issue tracking.
 
@@ -7,7 +7,7 @@ An independent Wireless CE team loading dashboard and offload management system 
 ## 📁 Project Structure
 
 ```
-offload_automation/
+wireless_ce_dashboard/
 ├── .env                                       # Local environment variables & secrets
 ├── .gitignore                                 # Git ignore rules
 ├── requirements.txt                           # Python dependencies
@@ -76,7 +76,7 @@ run_offload_reporter_issues.bat --send-email
 
 ## 🚚 Moving / Deploying to Another Location
 This folder is fully **self-contained**. To move it to another machine or folder:
-1. Copy the entire `offload_automation` folder to the target location.
+1. Copy the entire `wireless_ce_dashboard` folder to the target location.
 2. Ensure `.env` is present in the root of the folder.
 3. Run `python -m venv .venv` and `pip install -r requirements.txt` on the target machine (or rely on system `python`/`py`).
 4. Execute any `.bat` script directly from the new location.
