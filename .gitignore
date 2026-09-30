@@ -6,6 +6,9 @@
 *.pfx
 *.p12
 
+# Local internal team activity source workbook
+CFE work overview.xlsx
+
 # Token cache
 .graph_msal_token_cache.json
 .offload_csv_watch_state.json

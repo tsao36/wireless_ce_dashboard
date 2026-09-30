@@ -1,4 +1,4 @@
-# Offload Automation Standalone Dependencies
+# Wireless CE Team Dashboard Dependencies
 psycopg2-binary
 python-dotenv
 msal
@@ -8,4 +8,5 @@ httpx
 joblib
 scikit-learn
 pandas
+openpyxl
 urllib3

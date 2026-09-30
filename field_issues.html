@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Field Issues by Engineer</title>
+  <style>
+    :root { color-scheme: light; --ink:#151C27; --muted:#44555F; --surface:#FAF9F3; --line:#7686A3; --accent:#BC704A; --deep:#151C27; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; color:var(--ink); background:linear-gradient(145deg,#151C27 0%,#465962 52%,#536474 100%); font-family:"Segoe UI",Tahoma,sans-serif; }
+    main { width:min(1180px,calc(100% - 32px)); margin:32px auto; }
+    .masthead { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:20px; color:#FAF9F3; }
+    h1 { margin:0; font-size:clamp(28px,4vw,46px); text-shadow:0 1px 2px rgba(21,28,39,.45); }
+    .subtitle { margin:8px 0 0; }
+    .nav-link, .refresh { padding:11px 16px; border:1px solid #FAF9F3; border-radius:6px; color:#FAF9F3; background:transparent; font:700 14px "Segoe UI",Tahoma,sans-serif; text-decoration:none; cursor:pointer; }
+    .nav-link:hover,.nav-link:focus-visible,.refresh:hover,.refresh:focus-visible { color:var(--ink); background:#FAF9F3; outline:3px solid rgba(250,249,243,.35); }
+    .refresh:disabled { cursor:wait; opacity:.65; }
+    .actions { display:flex; gap:12px; flex-wrap:wrap; }
+    .summary { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+    .stat { min-width:160px; padding:14px 16px; background:rgba(250,249,243,.96); border-top:1px solid var(--accent); border-radius:6px; box-shadow:0 4px 14px rgba(21,28,39,.18); }
+    .stat span { display:block; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+    .stat strong { display:block; margin-top:4px; font-size:24px; }
+    .panel { overflow:hidden; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 18px 40px rgba(21,28,39,.22); }
+    .panel-head { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:18px 20px; border-bottom:1px solid var(--line); }
+    .panel-head h2 { margin:0; font-size:22px; }
+    #status { color:var(--muted); font-size:13px; }
+    .toolbar { display:flex; align-items:center; gap:10px; padding:14px 20px; border-bottom:1px solid var(--line); }
+    .toolbar-label { color:var(--muted); font-size:13px; font-weight:700; }
+    .view-toggle { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+    .view-toggle button { min-height:36px; padding:7px 14px; border:0; color:var(--ink); background:#fff; font:700 13px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
+    .view-toggle button + button { border-left:1px solid var(--line); }
+    .view-toggle button[aria-pressed="true"] { color:#FAF9F3; background:var(--deep); }
+    .view-toggle button:focus-visible { outline:3px solid rgba(188,112,74,.4); outline-offset:-3px; }
+    .error { color:var(--accent) !important; font-weight:700; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th { padding:12px 14px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:nowrap; }
+    td { padding:0 14px; border-bottom:1px solid #d8dce4; }
+    .engineer-table td:first-child { padding:12px 14px; }
+    .engineer-table th:last-child,.engineer-table td:last-child { width:180px; text-align:right; }
+    .engineer-table tbody tr:nth-child(even) td { background:#F0F3F5; }
+    .count-button { width:100%; min-height:44px; padding:12px 0; border:0; color:var(--accent); background:transparent; font:800 15px "Segoe UI",Tahoma,sans-serif; text-align:right; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; cursor:pointer; }
+    .count-button:hover,.count-button:focus-visible { color:var(--ink); background:rgba(188,112,74,.14); outline:2px solid var(--accent); outline-offset:-2px; }
+    .engineer-table tfoot td { padding:12px 14px; font-weight:800; border-top:2px solid var(--deep); }
+    .empty { padding:38px 22px; color:var(--muted); text-align:center; }
+    dialog { flex-direction:column; width:min(1100px,calc(100% - 28px)); max-height:86vh; padding:0; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 24px 70px rgba(21,28,39,.4); overflow:hidden; }
+    dialog[open] { display:flex; }
+    dialog::backdrop { background:rgba(21,28,39,.68); }
+    .modal-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 20px; border-bottom:1px solid var(--line); }
+    .modal-head h2 { margin:0; font-size:22px; }
+    .modal-close { width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:50%; color:var(--ink); background:transparent; font-size:20px; cursor:pointer; }
+    .modal-close:hover,.modal-close:focus-visible { background:var(--accent); }
+    .modal-body { flex:1 1 auto; min-height:0; overflow:auto; }
+    .issue-table { font-size:13px; }
+    .issue-table th { position:sticky; top:0; }
+    .issue-table td { padding:9px 12px; vertical-align:top; overflow-wrap:anywhere; }
+    .issue-table td.id { white-space:nowrap; }
+    .issue-table tbody tr:nth-child(even) td { background:#F0F3F5; }
+    .issue-table a { color:var(--ink); font-weight:700; }
+    mark { background:#E8B99E; color:inherit; padding:0 2px; border-radius:2px; }
+    @media (max-width:650px) {
+      main { width:calc(100% - 20px); margin:18px auto; }
+      .masthead { display:block; }
+      .actions { margin-top:16px; }
+      .issue-table { min-width:760px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <div><h1>Field Issues by Engineer</h1><p class="subtitle">ips_jira_bugs entries whose IPS title or Jira summary contains “field issue”</p></div>
+      <div class="actions"><button class="refresh" type="button" id="refresh">Refresh</button><a class="nav-link" href="index.html">Back to dashboard</a></div>
+    </header>
+    <section class="summary" aria-label="Field issue summary">
+      <div class="stat"><span>Field issues</span><strong id="issue-total">-</strong></div>
+      <div class="stat"><span>Engineers</span><strong id="engineer-total">-</strong></div>
+      <div class="stat"><span>Loaded</span><strong id="loaded-at">-</strong></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Issue count per engineer</h2><span id="status" role="status" aria-live="polite">Loading...</span></div>
+      <div class="toolbar"><span class="toolbar-label" id="view-label">View</span><div class="view-toggle" role="group" aria-labelledby="view-label"><button type="button" data-view="active" aria-pressed="true">Currently active</button><button type="button" data-view="year" aria-pressed="false" id="year-button">All in 2026</button></div></div>
+      <table class="engineer-table">
+        <thead><tr><th scope="col">Engineer</th><th scope="col">Field issues</th></tr></thead>
+        <tbody id="engineer-body"></tbody>
+        <tfoot id="engineer-foot"></tfoot>
+      </table>
+      <div class="empty" id="empty" hidden></div>
+    </section>
+  </main>
+  <dialog id="issue-modal" aria-labelledby="issue-title">
+    <div class="modal-head"><h2 id="issue-title">Issues</h2><button class="modal-close" type="button" id="close-issues" aria-label="Close issue list">&times;</button></div>
+    <div class="modal-body"><table class="issue-table"><thead><tr><th>IPS case</th><th>Created</th><th>IPS title</th><th>IPS status</th><th>Jira ID</th><th>Jira summary</th><th>Jira status</th><th>Customer</th></tr></thead><tbody id="issue-body"></tbody></table></div>
+  </dialog>
+  <script>
+    const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8010' : '';
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const highlight = text => esc(text).replace(/field issue/gi, match => `<mark>${match}</mark>`);
+    const link = (label, url) => !label ? '' : /^https:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label);
+    let groups = [];
+    let currentData = { issues: [] };
+    let currentView = 'active';
+    const viewLabel = () => currentView === 'active' ? 'currently active' : `created in ${currentData.year || new Date().getFullYear()}`;
+
+    function render() {
+      const data = currentData;
+      const issues = data.issues.filter(issue => currentView === 'active' ? issue.active : issue.in_year);
+      const byEngineer = new Map();
+      issues.forEach(issue => { if (!byEngineer.has(issue.engineer)) byEngineer.set(issue.engineer, []); byEngineer.get(issue.engineer).push(issue); });
+      groups = [...byEngineer.entries()].map(([engineer, issues]) => ({ engineer, issues })).sort((a, b) => b.issues.length - a.issues.length || a.engineer.localeCompare(b.engineer));
+      document.querySelector('#engineer-body').innerHTML = groups.map((group, index) => `<tr><td>${esc(group.engineer)}</td><td><button class="count-button" type="button" data-index="${index}" aria-label="Show ${group.issues.length} field issues for ${esc(group.engineer)}">${group.issues.length}</button></td></tr>`).join('');
+      document.querySelector('#engineer-foot').innerHTML = groups.length ? `<tr><td>Total</td><td>${issues.length}</td></tr>` : '';
+      document.querySelector('#issue-total').textContent = issues.length;
+      document.querySelector('#engineer-total').textContent = groups.length;
+      document.querySelector('#loaded-at').textContent = data.loaded_at ? new Date(data.loaded_at).toLocaleTimeString() : '-';
+      const empty = document.querySelector('#empty'); empty.hidden = groups.length > 0; empty.textContent = `No ${viewLabel()} entries contain “field issue”.`;
+    }
+
+    async function load() {
+      const status = document.querySelector('#status'); const button = document.querySelector('#refresh');
+      button.disabled = true; status.classList.remove('error'); status.textContent = 'Querying database...';
+      try {
+        const response = await fetch(`${API_BASE}/api/field-issues`, { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+        currentData = data;
+        if (data.year) document.querySelector('#year-button').textContent = `All in ${data.year}`;
+        render();
+        status.textContent = `Keyword: “${data.keyword}”`;
+      } catch (error) {
+        status.classList.add('error'); status.textContent = `Unable to load field issues: ${error.message}`;
+      } finally { button.disabled = false; }
+    }
+
+    function showIssues(group) {
+      document.querySelector('#issue-title').textContent = `${group.engineer} · ${group.issues.length} field issue${group.issues.length === 1 ? '' : 's'} (${viewLabel()})`;
+      document.querySelector('#issue-body').innerHTML = group.issues.map(issue => `<tr><td class="id">${link(issue.ips_case_number, issue.ips_url)}</td><td class="id">${esc(issue.bug_created_date)}</td><td>${highlight(issue.ips_title)}</td><td>${esc(issue.ips_status)}</td><td class="id">${link(issue.jira_id, issue.jira_url)}</td><td>${highlight(issue.jira_summary)}</td><td>${esc(issue.jira_status)}</td><td>${esc(issue.customer)}</td></tr>`).join('');
+      document.querySelector('#issue-modal').showModal();
+    }
+
+    document.querySelector('#engineer-body').addEventListener('click', event => { const button = event.target.closest('.count-button'); if (button) showIssues(groups[Number(button.dataset.index)]); });
+    document.querySelector('#close-issues').addEventListener('click', () => document.querySelector('#issue-modal').close());
+    document.querySelector('#issue-modal').addEventListener('click', event => { if (event.target === event.currentTarget) event.currentTarget.close(); });
+    document.querySelector('#refresh').addEventListener('click', load);
+    document.querySelectorAll('.view-toggle button').forEach(button => button.addEventListener('click', () => {
+      currentView = button.dataset.view;
+      document.querySelectorAll('.view-toggle button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      render();
+    }));
+    load();
+  </script>
+</body>
+</html>

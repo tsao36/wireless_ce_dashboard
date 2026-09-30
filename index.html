@@ -3,40 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Team Loading Dashboard</title>
+  <title>Wireless CE Team Dashboard</title>
   <style>
-    :root { color-scheme: light; --ink:#151C27; --muted:#44555F; --surface:#FAF9F3; --line:#7686A3; --accent:#BC704A; --gold:#BC704A; --blue:#44555F; --deep:#151C27; --danger:#BC704A; }
+    :root { color-scheme: light; --ink:#151C27; --muted:#44555F; --surface:#FAF9F3; --line:#7686A3; --accent:#BC704A; --gold:#BC704A; --deep:#151C27; --danger:#BC704A; }
     * { box-sizing: border-box; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
     body {
       margin: 0;
       min-height: 100vh;
-      color: var(--ink); background:linear-gradient(145deg,#151C27 0%,#44555F 52%,#7686A3 100%); font-family:"Segoe UI",Tahoma,sans-serif;
+      color: var(--ink); background:linear-gradient(145deg,#151C27 0%,#465962 52%,#536474 100%); font-family:"Segoe UI",Tahoma,sans-serif;
     }
     main { width:min(1180px,calc(100% - 32px)); margin:32px auto; }
     .masthead { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:20px; color:#FAF9F3; }
     h1 { margin:0; color:#FAF9F3; font-size:clamp(28px,4vw,46px); letter-spacing:0; text-shadow:0 1px 2px rgba(21,28,39,.45); }
-    .subtitle { margin:8px 0 0; color:#7686A3; }
+    .subtitle { margin:8px 0 0; color:#FAF9F3; }
     .actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
     .run-batch, .bookmark-batch { padding:11px 16px; border:1px solid #FAF9F3; border-radius:6px; color:#FAF9F3; background:transparent; font:700 14px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
     .run-batch:hover,.bookmark-batch:hover,.run-batch:focus-visible,.bookmark-batch:focus-visible { color:var(--ink); background:#FAF9F3; outline:3px solid rgba(250,249,243,.35); }
     .run-batch:disabled { cursor:wait; opacity:.65; }
     .bookmark-batch { border-color:var(--gold); color:#FAF9F3; background:rgba(188,112,74,.2); position:relative; }
-    .bookmark-popover { position:absolute; left:50%; top:calc(100% + 10px); transform:translateX(-50%) translateY(-4px); min-width:220px; max-width:260px; padding:10px 12px; background:var(--deep); color:#FAF9F3; border-left:4px solid var(--accent); border-radius:6px; box-shadow:0 12px 28px rgba(21,28,39,.2); font:700 12px "Segoe UI",Tahoma,sans-serif; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; }
+    .bookmark-popover { position:absolute; left:50%; top:calc(100% + 10px); transform:translateX(-50%) translateY(-4px); min-width:220px; max-width:260px; padding:10px 12px; background:var(--deep); color:#FAF9F3; border-top:1px solid var(--accent); border-radius:6px; box-shadow:0 12px 28px rgba(21,28,39,.2); font:700 12px "Segoe UI",Tahoma,sans-serif; opacity:0; pointer-events:none; transition:opacity .2s ease, transform .2s ease; }
     .bookmark-popover.visible { opacity:1; transform:translateX(-50%) translateY(0); }
-    .toast { position:fixed; z-index:10; right:20px; bottom:20px; max-width:min(380px,calc(100% - 40px)); padding:12px 16px; color:#FAF9F3; background:var(--deep); border-left:4px solid var(--accent); border-radius:6px; box-shadow:0 12px 32px rgba(21,28,39,.32); font:700 13px "Segoe UI",Tahoma,sans-serif; animation: toastFadeIn .2s ease-out; }
+    .toast { position:fixed; z-index:10; right:20px; bottom:20px; max-width:min(380px,calc(100% - 40px)); padding:12px 16px; color:#FAF9F3; background:var(--deep); border-top:1px solid var(--accent); border-radius:6px; box-shadow:0 12px 32px rgba(21,28,39,.32); font:700 13px "Segoe UI",Tahoma,sans-serif; animation: toastFadeIn .2s ease-out; }
     @keyframes toastFadeIn {
       from { opacity:0; transform:translateY(12px); }
       to { opacity:1; transform:translateY(0); }
     }
     .toast[hidden] { display:none; }
     .summary { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
-    .stat { min-width:160px; padding:14px 16px; background:rgba(250,249,243,.96); border-left:5px solid var(--gold); border-radius:6px; box-shadow:0 4px 14px rgba(21,28,39,.18); }
+    .stat { min-width:160px; padding:14px 16px; background:rgba(250,249,243,.96); border-top:1px solid var(--gold); border-radius:6px; box-shadow:0 4px 14px rgba(21,28,39,.18); }
     .stat span { display:block; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; text-transform:uppercase; letter-spacing:.08em; }
     .stat strong { display:block; margin-top:4px; font-size:24px; }
     .updated-stat { position:relative; padding-right:42px; }
     .weight-button { position:absolute; top:10px; right:10px; width:28px; height:28px; padding:0; border:1px solid var(--line); border-radius:50%; color:var(--ink); background:transparent; font:700 16px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
-    .weight-button:hover,.weight-button:focus-visible { color:#FAF9F3; background:var(--accent); outline:3px solid rgba(188,112,74,.25); }
+    .weight-button:hover,.weight-button:focus-visible { color:var(--ink); background:var(--accent); outline:3px solid rgba(188,112,74,.25); }
     .panel { overflow:hidden; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 18px 40px rgba(21,28,39,.22); }
     .panel-head { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:18px 20px; border-bottom:1px solid var(--line); }
     .panel-head h2 { margin:0; font-size:22px; }
@@ -67,20 +67,40 @@
     .empty { padding:38px 22px; color:var(--muted); text-align:center; font-family:"Segoe UI",Tahoma,sans-serif; }
     .empty p { margin:0 0 14px; }
     .clear-filters { padding:8px 12px; border:1px solid var(--accent); border-radius:5px; color:var(--ink); background:transparent; font:700 13px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
-    .clear-filters:hover,.clear-filters:focus-visible { color:#FAF9F3; background:var(--accent); outline:3px solid rgba(188,112,74,.25); }
+    .clear-filters:hover,.clear-filters:focus-visible { color:var(--ink); background:var(--accent); outline:3px solid rgba(188,112,74,.25); }
     .toolbar { display:flex; flex-wrap:wrap; gap:10px; padding:14px 20px; background:#FAF9F3; border-bottom:1px solid var(--line); }
     .toolbar label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; font-weight:700; }
     .toolbar input,.toolbar select { min-height:36px; padding:7px 9px; border:1px solid #7686A3; border-radius:5px; color:var(--ink); background:#fff; font:14px "Segoe UI",Tahoma,sans-serif; }
     .toolbar input:focus-visible,.toolbar select:focus-visible { outline:3px solid rgba(188,112,74,.3); border-color:var(--accent); }
-    .footnote { margin:14px 0 0; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; }
+    .footnote { margin:14px 0 0; color:#FAF9F3; font:12px "Segoe UI",Tahoma,sans-serif; }
     .error { color:var(--danger) !important; font-weight:700; }
+    .view-switch { display:flex; gap:4px; margin:0 0 16px; border-bottom:1px solid rgba(250,249,243,.45); }
+    .view-tab { min-height:42px; padding:9px 16px; border:0; border-bottom:3px solid transparent; color:#FAF9F3; background:transparent; font:700 14px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
+    .view-tab[aria-selected="true"] { color:var(--ink); background:var(--surface); border-bottom-color:var(--accent); }
+    .view-tab:focus-visible { outline:3px solid #FAF9F3; outline-offset:2px; }
+    .activity-panel { margin-bottom:16px; }
+    .activity-toolbar { align-items:end; }
+    .activity-toolbar label { display:flex; flex-direction:column; align-items:stretch; min-width:150px; }
+    .activity-toolbar input,.activity-toolbar select { min-width:150px; }
+    .activity-toolbar #activity-search { min-width:min(260px, 100%); }
+    .activity-refresh { min-height:36px; padding:7px 12px; border:1px solid var(--accent); border-radius:5px; color:var(--ink); background:transparent; font:700 13px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
+    .activity-refresh:hover,.activity-refresh:focus-visible { color:var(--ink); background:#E8B99E; outline:3px solid rgba(188,112,74,.28); }
+    .activity-refresh:disabled { cursor:wait; opacity:.65; }
+    .activity-status { min-height:20px; margin:0; padding:8px 20px; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; }
+    .activity-table-wrap { max-height:min(68vh,760px); overflow:auto; }
+    .activity-table { width:max-content; min-width:100%; border-collapse:collapse; font:13px "Segoe UI",Tahoma,sans-serif; }
+    .activity-table th { position:sticky; top:0; z-index:1; padding:10px 12px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:normal; }
+    .activity-table td { min-width:92px; max-width:420px; padding:9px 12px; border-bottom:1px solid #d8dce4; color:var(--ink); text-align:left; vertical-align:top; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .activity-table tbody tr:nth-child(even) td { background:#F0F3F5; }
+    .activity-table tbody tr:hover td { background:#E8EEF1; }
+    .activity-empty { padding:34px 20px; color:var(--muted); text-align:center; }
     dialog { display:flex; flex-direction:column; width:min(700px,calc(100% - 28px)); max-height:84vh; padding:0; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 24px 70px rgba(21,28,39,.4); overflow:hidden; }
     dialog:not([open]) { display:none; }
     dialog::backdrop { background:rgba(21,28,39,.68); }
     .modal-head { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 20px; border-bottom:1px solid var(--line); }
     .modal-head h2 { margin:0; font-size:22px; }
     .modal-close { width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:50%; color:var(--ink); background:transparent; font-size:20px; cursor:pointer; }
-    .modal-close:hover,.modal-close:focus-visible { color:#FAF9F3; background:var(--accent); }
+    .modal-close:hover,.modal-close:focus-visible { color:var(--ink); background:var(--accent); }
     .modal-body { min-height:0; flex:1 1 auto; padding:14px 16px 18px; overflow-y:auto; overflow-x:hidden; }
     .modal-section + .modal-section { margin-top:20px; }
     .modal-section h3 { margin:0 0 8px; font-size:15px; }
@@ -92,7 +112,7 @@
     .weight-table th { color:#FAF9F3; background:var(--deep); white-space:normal; font-size:11px; }
     .calculation-table th:first-child,.calculation-table td:first-child { width:auto; }
     .calculation-table th:not(:first-child),.calculation-table td:not(:first-child) { width:18%; text-align:right; }
-    .calculation-total { display:flex; justify-content:space-between; gap:16px; margin:14px 0 0; padding:12px; color:var(--ink); background:rgba(188,112,74,.14); border-left:4px solid var(--accent); font-size:15px; }
+    .calculation-total { display:flex; justify-content:space-between; gap:16px; margin:14px 0 0; padding:12px; color:var(--ink); background:rgba(188,112,74,.14); border-top:1px solid var(--accent); font-size:15px; }
     .calculation-total strong:last-child { color:var(--accent); font-size:18px; }
     .calculation-formula { margin:0 0 12px; color:var(--muted); font-size:13px; }
     .modal-note { margin:0 0 12px; color:var(--muted); font-size:12px; }
@@ -120,15 +140,39 @@
       .detail-row { display:block; }
       .detail-row td { display:block; }
       .detail-content { padding:14px 16px; }
+      .view-switch { overflow-x:auto; }
+      .view-tab { flex:0 0 auto; }
+      .activity-toolbar { display:grid; grid-template-columns:1fr 1fr; }
+      .activity-toolbar label,.activity-toolbar input,.activity-toolbar select { min-width:0; width:100%; }
+      .activity-table-wrap { overflow:auto; }
+      .activity-table { min-width:640px; }
     }
   </style>
 </head>
 <body>
   <main>
-    <header class="masthead"><div><h1>Team Loading Dashboard</h1><p class="subtitle">Weighted loading from the latest daily offload summary</p></div><div class="actions"><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button></div></header>
+    <header class="masthead"><div><h1>Wireless CE Team Dashboard</h1><p class="subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button></div></header>
+    <div class="view-switch" role="tablist" aria-label="Dashboard views">
+      <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="true" aria-controls="activity-view">Team activity</button>
+      <button class="view-tab" id="loading-tab" type="button" role="tab" aria-selected="false" aria-controls="loading-view" tabindex="-1">Team loading</button>
+    </div>
+    <section class="panel activity-panel" id="activity-view" role="tabpanel" aria-labelledby="activity-tab">
+      <div class="panel-head"><h2>Team activity</h2><span id="activity-record-count">Loading workbook...</span></div>
+      <div class="toolbar activity-toolbar">
+        <label>Area <select id="activity-category"><option value="">All areas</option></select></label>
+        <label>Worksheet <select id="activity-sheet"><option value="">Loading...</option></select></label>
+        <label>Search <input id="activity-search" type="search" placeholder="Search this worksheet" aria-label="Search current worksheet"></label>
+        <button class="activity-refresh" type="button" id="activity-refresh">Refresh workbook</button>
+      </div>
+      <p class="activity-status" id="activity-status" role="status" aria-live="polite">Loading activity workbook...</p>
+      <div class="table-wrap activity-table-wrap" id="activity-table-wrap"><table class="activity-table"><thead id="activity-table-head"></thead><tbody id="activity-table-body"></tbody></table></div>
+      <div class="activity-empty" id="activity-empty" hidden></div>
+    </section>
+    <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab" hidden>
     <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
     <section class="panel"><div class="panel-head"><h2>Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
-    <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
+      <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
+    </section>
   </main>
   <dialog id="weights-modal" aria-labelledby="weights-title"><div class="modal-head"><h2 id="weights-title">Current loading weights</h2><button class="modal-close" type="button" id="close-weights" aria-label="Close weights">&times;</button></div><div class="modal-body" id="weights-body"><p class="modal-note">Loading weight configuration...</p></div></dialog>
   <dialog id="calculation-modal" aria-labelledby="calculation-title"><div class="modal-head"><h2 id="calculation-title">Weighted loading calculation</h2><button class="modal-close" type="button" id="close-calculation" aria-label="Close calculation">&times;</button></div><div class="modal-body" id="calculation-body"></div></dialog>
@@ -144,6 +188,8 @@
     document.querySelector('#name-filter').value = savedViewState.name || '';
     document.querySelector('#sort-filter').value = ['weighted_loading_value', 'total', 'name'].includes(savedViewState.sort) ? savedViewState.sort : 'weighted_loading_value';
     let currentSnapshot = { rows: [], categories: [] };
+    let currentActivity = { sheets: [] };
+    let activityLoading = false;
     let toastTimer;
     function showToast(message) {
       const toast = document.querySelector('#toast'); toast.textContent = message; toast.hidden = false; window.clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { toast.hidden = true; }, 5000);
@@ -170,7 +216,63 @@
       }).join('');
       const empty = document.querySelector('#empty'); empty.hidden = rows.length > 0; document.querySelector('#empty-message').textContent = currentSnapshot.rows.length ? 'No members match the current filters.' : (currentSnapshot.message || 'No loading rows are available.'); document.querySelector('#clear-filters').hidden = !currentSnapshot.rows.length;
     }
-    async function loadDates() {
+          function renderActivitySheet() {
+            const category = document.querySelector('#activity-category').value;
+            const selectedName = document.querySelector('#activity-sheet').value;
+            const search = document.querySelector('#activity-search').value.trim().toLowerCase();
+            const sheet = currentActivity.sheets.find(item => item.name === selectedName && (!category || item.category === category));
+            const head = document.querySelector('#activity-table-head'); const body = document.querySelector('#activity-table-body'); const empty = document.querySelector('#activity-empty');
+            if (!sheet) { head.innerHTML = ''; body.innerHTML = ''; empty.hidden = false; empty.textContent = currentActivity.message || 'No worksheet is available for this area.'; document.querySelector('#activity-record-count').textContent = 'No data'; return; }
+            const rows = sheet.rows.filter(row => row.row !== 1 && (!search || row.values.map(value => String(value ?? '')).join(' ').toLowerCase().includes(search)));
+            head.innerHTML = `<tr>${sheet.columns.map(column => `<th scope="col">${esc(column.label)}</th>`).join('')}</tr>`;
+            body.innerHTML = rows.map(row => `<tr>${row.values.map(value => `<td>${esc(value ?? '')}</td>`).join('')}</tr>`).join('');
+            empty.hidden = rows.length > 0; empty.textContent = search ? 'No rows match this search.' : 'This worksheet has no rows for the current year.';
+            document.querySelector('#activity-record-count').textContent = `${rows.length} rows · ${sheet.name}`;
+          }
+          function updateActivitySheets(preferredName = '') {
+            const category = document.querySelector('#activity-category').value;
+            const select = document.querySelector('#activity-sheet');
+            const sheets = currentActivity.sheets.filter(sheet => !category || sheet.category === category);
+            select.innerHTML = sheets.map(sheet => `<option value="${esc(sheet.name)}">${esc(sheet.name)}</option>`).join('');
+            const nextName = [preferredName, 'CFE_tasks', sheets[0]?.name].find(name => name && sheets.some(sheet => sheet.name === name));
+            select.value = nextName || '';
+            renderActivitySheet();
+          }
+          async function loadActivity() {
+            if (activityLoading) return;
+            activityLoading = true;
+            const button = document.querySelector('#activity-refresh'); const status = document.querySelector('#activity-status');
+            button.disabled = true; button.textContent = 'Refreshing...'; status.classList.remove('error'); status.textContent = 'Reading workbook...';
+            try {
+              const response = await fetch(`${API_BASE}/api/activity`, { cache: 'no-store' });
+              const result = await response.json();
+              if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
+              const selectedCategory = document.querySelector('#activity-category').value;
+              const selectedSheet = document.querySelector('#activity-sheet').value;
+              currentActivity = result;
+              const categories = [...new Set(result.sheets.map(sheet => sheet.category))];
+              const categorySelect = document.querySelector('#activity-category');
+              categorySelect.innerHTML = '<option value="">All areas</option>' + categories.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+              categorySelect.value = categories.includes(selectedCategory) ? selectedCategory : '';
+              updateActivitySheets(selectedSheet);
+              const updatedAt = result.source_updated_at ? new Date(result.source_updated_at).toLocaleString() : 'unknown';
+              status.textContent = `${result.source} · workbook updated ${updatedAt} · loaded ${new Date(result.loaded_at).toLocaleTimeString()}`;
+            } catch (error) {
+              status.classList.add('error'); status.textContent = `Unable to load workbook: ${error.message}`;
+              document.querySelector('#activity-record-count').textContent = 'Workbook unavailable';
+            } finally { button.disabled = false; button.textContent = 'Refresh workbook'; activityLoading = false; }
+          }
+          function selectDashboardView(view) {
+            const activity = view === 'activity';
+            document.querySelector('#activity-tab').setAttribute('aria-selected', String(activity));
+            document.querySelector('#loading-tab').setAttribute('aria-selected', String(!activity));
+            document.querySelector('#activity-tab').tabIndex = activity ? 0 : -1;
+            document.querySelector('#loading-tab').tabIndex = activity ? -1 : 0;
+            document.querySelector('#activity-view').hidden = !activity;
+            document.querySelector('#loading-view').hidden = activity;
+            if (activity && !currentActivity.sheets.length) loadActivity();
+          }
+          async function loadDates() {
       const response = await fetch(`${API_BASE}/api/dates`, { cache: 'no-store' }); if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const dates = await response.json(); const select = document.querySelector('#date-filter'); const selectedDate = select.value; select.innerHTML = '<option value="latest">Latest</option>';
       dates.dates.forEach(date => { const option = document.createElement('option'); option.value = date; option.textContent = date; select.appendChild(option); });
@@ -270,6 +372,19 @@
       } catch (error) { runButton.disabled = false; runButton.textContent = 'Run daily loading'; showToast(`Unable to run daily loading: ${error.message}`); }
     }
     document.querySelector('#date-filter').addEventListener('change', loadSnapshot);
+        document.querySelector('#activity-category').addEventListener('change', () => updateActivitySheets());
+        document.querySelector('#activity-sheet').addEventListener('change', renderActivitySheet);
+        document.querySelector('#activity-search').addEventListener('input', renderActivitySheet);
+        document.querySelector('#activity-refresh').addEventListener('click', loadActivity);
+        const dashboardTabs = [...document.querySelectorAll('.view-tab')];
+        dashboardTabs.forEach((tab, index) => {
+          tab.addEventListener('click', () => selectDashboardView(tab.id === 'activity-tab' ? 'activity' : 'loading'));
+          tab.addEventListener('keydown', event => {
+            const nextIndex = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? (index + 1) % dashboardTabs.length : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? (index + dashboardTabs.length - 1) % dashboardTabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? dashboardTabs.length - 1 : -1;
+            if (nextIndex < 0) return;
+            event.preventDefault(); dashboardTabs[nextIndex].focus(); dashboardTabs[nextIndex].click();
+          });
+        });
     document.querySelector('#name-filter').addEventListener('input', () => { saveViewState(); renderSnapshot(); });
     document.querySelector('#category-filter').addEventListener('change', () => { saveViewState(); renderSnapshot(); });
     document.querySelector('#sort-filter').addEventListener('change', () => { saveViewState(); renderSnapshot(); });
@@ -286,6 +401,7 @@
     document.querySelectorAll('dialog').forEach(modal => modal.addEventListener('click', event => { if (event.target === event.currentTarget) event.currentTarget.close(); }));
     document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelectorAll('dialog[open]').forEach(modal => modal.close()); });
     loadSnapshot();
+    loadActivity();
   </script>
 </body>
 </html>
