@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import re
 import subprocess
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -20,6 +22,7 @@ from openpyxl.utils import get_column_letter
 from psycopg2 import sql
 
 from APIs import Sherlock
+import issue_category_model as category_model
 
 ROOT = Path(__file__).resolve().parent
 SNAPSHOT_PATH = Path(os.environ.get("OFFLOAD_LOADING_SNAPSHOT_FILE", "team_loading_latest.json"))
@@ -52,6 +55,45 @@ FIELD_ISSUE_DETAIL_COLUMNS = (
     "jira_url",
     "customer",
 )
+CATEGORY_TUNING_DIR = Path(
+    os.environ.get(
+        "CATEGORY_TUNING_DIR",
+        str(ROOT.parents[1] / "jira_ips_tat_HP" / "jira_tat" / "jira_customer_tat" / "jobs" / "01_issue_category_tuning"),
+    )
+)
+_TUNING_MODEL_PATH = CATEGORY_TUNING_DIR / "models" / "issue_category_model.joblib"
+CATEGORY_MODEL_PATH = _TUNING_MODEL_PATH if _TUNING_MODEL_PATH.is_file() else ROOT / "models" / "issue_category_model.joblib"
+CATEGORY_METRICS_PATH = CATEGORY_TUNING_DIR / "models" / "issue_category_model_metrics.json"
+CATEGORY_CONFIG_PATH = CATEGORY_TUNING_DIR / "bug_category_config.json"
+# Saved into CFE_input so the weekly tuning/retrain jobs pick team reviews up as training rows.
+CATEGORY_REVIEW_PATH = Path(
+    os.environ.get(
+        "CATEGORY_REVIEW_FILE",
+        str(
+            CATEGORY_TUNING_DIR / "CFE_input" / "dashboard_cfe_reviews.csv"
+            if (CATEGORY_TUNING_DIR / "CFE_input").is_dir()
+            else ROOT / "category_reviews" / "dashboard_cfe_reviews.csv"
+        ),
+    )
+)
+CATEGORY_REVIEW_COLUMNS = (
+    "ips_title",
+    "predicted_category",
+    "technology",
+    "human_category",
+    "ips_case_number",
+    "verdict",
+    "llm_category",
+    "reviewer",
+    "reviewed_at",
+)
+CATEGORY_LOCK = threading.Lock()
+CATEGORY_CACHE: dict = {"model_mtime": None, "bundle": None, "predictions": {}, "queue": {}, "reviewers": set()}
+LLM_CACHE_PATH = ROOT / "cache" / "category_llm_predictions.json"
+LLM_LOCK = threading.Lock()
+LLM_STATE: dict = {"running": False, "done": 0, "total": 0, "failed": 0, "predictions": None, "error": "", "failed_at": None}
+LLM_RETRY_AFTER = timedelta(minutes=30)
+LLM_MAX_CONSECUTIVE_FAILURES = 8
 
 
 def _workbook_value(value: object) -> object:
@@ -176,7 +218,7 @@ def _field_issue_active_expr(available: set[str]) -> str:
     return (
         f"(CASE WHEN {bug} IS NOT NULL THEN {bug} <> 'CLOSED' "
         f"WHEN {ips} IS NULL AND {jira} IS NULL THEN FALSE "
-        f"ELSE COALESCE({ips}, '') <> 'CLOSED' AND COALESCE({jira}, '') <> 'CLOSED' END)"
+        f"ELSE COALESCE({ips}, '') <> 'CLOSED' AND COALESCE({jira}, '') NOT IN ('CLOSED', 'VERIFY', 'IMPLEMENTED') END)"
     )
 
 
@@ -227,6 +269,343 @@ def _load_field_issues() -> dict:
     }
 
 
+def _read_json(path: Path) -> dict:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _file_date(path: Path) -> str:
+    return datetime.fromtimestamp(path.stat().st_mtime).date().isoformat() if path.exists() else ""
+
+
+def _category_labels() -> list[str]:
+    labels = _read_json(CATEGORY_CONFIG_PATH).get("default_categories") or []
+    if not labels and CATEGORY_CACHE["bundle"]:
+        labels = CATEGORY_CACHE["bundle"].get("labels") or []
+    return sorted({str(label).strip() for label in labels if str(label).strip()}, key=str.casefold)
+
+
+def _category_model_status() -> dict:
+    metrics = _read_json(CATEGORY_METRICS_PATH)
+    report = metrics.get("classification_report") or {}
+    per_category = [
+        {
+            "category": name,
+            "precision": values.get("precision"),
+            "recall": values.get("recall"),
+            "f1": values.get("f1-score"),
+            "support": values.get("support"),
+        }
+        for name, values in report.items()
+        if isinstance(values, dict) and name not in ("macro avg", "weighted avg")
+    ]
+    weekly_dirs = sorted((CATEGORY_TUNING_DIR / "tuning_outputs").glob("weekly_*"))
+    decision = _read_json(weekly_dirs[-1] / "model_promotion_decision.json") if weekly_dirs else {}
+    label_files = [
+        path
+        for folder in ("CFE_input", "CFE_reviewed_issue")
+        for path in (CATEGORY_TUNING_DIR / folder).glob("*.csv")
+        if path.resolve() != CATEGORY_REVIEW_PATH.resolve() and path.name.startswith(("weekly_human_labels", "reviewed"))
+    ]
+    latest_labels = max(label_files, key=lambda path: path.stat().st_mtime, default=None)
+    return {
+        "available": bool(metrics),
+        "model_file": CATEGORY_MODEL_PATH.name,
+        "trained_at": _file_date(CATEGORY_METRICS_PATH) or _file_date(CATEGORY_MODEL_PATH),
+        "accuracy": metrics.get("accuracy"),
+        "macro_f1": (report.get("macro avg") or {}).get("f1-score"),
+        "rows_used": metrics.get("rows_used"),
+        "test_rows": metrics.get("test_rows_human") or (report.get("macro avg") or {}).get("support"),
+        "dropped_rare_labels": metrics.get("dropped_rare_labels") or [],
+        "per_category": per_category,
+        "latest_weekly_run": weekly_dirs[-1].name.removeprefix("weekly_") if weekly_dirs else "",
+        "latest_human_responses": decision.get("human_responses_received"),
+        "latest_promoted": decision.get("promoted"),
+        "latest_human_labels_at": _file_date(latest_labels) if latest_labels else "",
+    }
+
+
+def _read_category_reviews() -> dict[str, dict]:
+    if not CATEGORY_REVIEW_PATH.is_file():
+        return {}
+    with CATEGORY_REVIEW_PATH.open("r", encoding="utf-8-sig", newline="") as handle:
+        return {row["ips_case_number"]: row for row in csv.DictReader(handle) if row.get("ips_case_number")}
+
+
+def _write_category_reviews(reviews: dict[str, dict]) -> None:
+    CATEGORY_REVIEW_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = CATEGORY_REVIEW_PATH.with_suffix(".tmp")
+    with temp_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=CATEGORY_REVIEW_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(sorted(reviews.values(), key=lambda row: row.get("reviewed_at", "")))
+    os.replace(temp_path, CATEGORY_REVIEW_PATH)
+
+
+def _category_technology_expr(available: set[str]) -> str:
+    if "technology" in available:
+        return "technology::text"
+    if "bug_project" not in available:
+        return "NULL"
+    # Same bug_project -> technology mapping the offload weighting uses.
+    return (
+        "CASE LOWER(TRIM(COALESCE(bug_project::text, ''))) "
+        "WHEN 'wifi' THEN 'WiFi' WHEN 'bt' THEN 'BT' WHEN 'cie' THEN 'Software' WHEN 'wot' THEN 'Tools' ELSE NULL END"
+    )
+
+
+def _load_category_queue() -> dict[str, dict]:
+    model_mtime = CATEGORY_MODEL_PATH.stat().st_mtime
+    if CATEGORY_CACHE["model_mtime"] != model_mtime:
+        CATEGORY_CACHE.update(
+            model_mtime=model_mtime,
+            bundle=category_model.load_category_model(str(CATEGORY_MODEL_PATH)),
+            predictions={},
+        )
+
+    db = Sherlock.PostgresCustomerEngineeringDb
+    connection = psycopg2.connect(
+        dbname=db.database, user=db.user, password=db.password, host=db.host, port=db.port, connect_timeout=10
+    )
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = %s AND table_schema = ANY(current_schemas(false))",
+                (FIELD_ISSUE_TABLE,),
+            )
+            available = {row[0] for row in cursor.fetchall()}
+            cursor.execute(
+                sql.SQL(
+                    "SELECT DISTINCT ON (ips_case_number::text) ips_case_number::text, ips_title, ips_url, ips_status, "
+                    "engineer, ips_created_date, {technology} FROM {table} "
+                    "WHERE ips_created_date >= make_date(%s, 1, 1) AND ips_created_date < make_date(%s, 1, 1) "
+                    "AND ips_case_number::text ~ '^[0-9]+$' "
+                    "AND NULLIF(NULLIF(TRIM(ips_title::text), ''), 'NA') IS NOT NULL "
+                    "ORDER BY ips_case_number::text, ips_created_date DESC"
+                ).format(
+                    technology=sql.SQL(_category_technology_expr(available)),
+                    table=sql.Identifier(FIELD_ISSUE_TABLE),
+                ),
+                (CURRENT_YEAR, CURRENT_YEAR + 1),
+            )
+            rows = cursor.fetchall()
+            cursor.execute(
+                sql.SQL(
+                    "SELECT DISTINCT TRIM(engineer::text) FROM {table} "
+                    "WHERE NULLIF(NULLIF(TRIM(engineer::text), ''), 'NA') IS NOT NULL"
+                ).format(table=sql.Identifier(FIELD_ISSUE_TABLE))
+            )
+            reviewers = {row[0] for row in cursor.fetchall()}
+    finally:
+        connection.close()
+
+    queue: dict[str, dict] = {}
+    for case_number, title, url, status, engineer, created, technology in rows:
+        technology = _field_issue_text(technology)
+        # Software issues are hard-ruled to ICPS/Killer in both prediction and training, so reviews would be ignored.
+        if technology.lower() == "software":
+            continue
+        title = _field_issue_text(title)
+        key = (case_number, title, technology)
+        if key not in CATEGORY_CACHE["predictions"]:
+            CATEGORY_CACHE["predictions"][key] = category_model.classify_issue_title(
+                CATEGORY_CACHE["bundle"], title, technology=technology, use_llm=False
+            )
+        predicted, confidence = CATEGORY_CACHE["predictions"][key]
+        queue[case_number] = {
+            "ips_case_number": case_number,
+            "ips_title": title,
+            "ips_url": _field_issue_text(url),
+            "ips_status": _field_issue_text(status),
+            "engineer": _field_issue_text(engineer) or "Unassigned",
+            "created": created.date().isoformat() if created else "",
+            "technology": technology,
+            "predicted_category": predicted,
+            "confidence": round(float(confidence), 4),
+        }
+    CATEGORY_CACHE["queue"] = queue
+    CATEGORY_CACHE["reviewers"] = reviewers
+    return queue
+
+
+def _llm_predictions() -> dict[str, dict]:
+    with LLM_LOCK:
+        if LLM_STATE["predictions"] is None:
+            LLM_STATE["predictions"] = _read_json(LLM_CACHE_PATH)
+        return LLM_STATE["predictions"]
+
+
+def _save_llm_predictions() -> None:
+    with LLM_LOCK:
+        snapshot = json.dumps(LLM_STATE["predictions"] or {}, ensure_ascii=False)
+    LLM_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = LLM_CACHE_PATH.with_suffix(".tmp")
+    temp_path.write_text(snapshot, encoding="utf-8")
+    os.replace(temp_path, LLM_CACHE_PATH)
+
+
+def _llm_prediction_for(issue: dict) -> dict | None:
+    cached = _llm_predictions().get(issue["ips_case_number"])
+    # A title/technology edit or a different LLM model invalidates the cached answer.
+    if not cached or cached.get("title") != issue["ips_title"] or cached.get("technology") != issue["technology"]:
+        return None
+    return cached if cached.get("llm_model") == category_model.llm_model_name() else None
+
+
+def _run_llm_backfill(missing: list[dict], llm_model: str) -> None:
+    bundle = CATEGORY_CACHE["bundle"]
+
+    def predict(issue: dict) -> tuple[dict, tuple[str, float] | None]:
+        return issue, category_model.classify_issue_title_llm(bundle, issue["ips_title"], technology=issue["technology"])
+
+    def record(issue: dict, result: tuple[str, float] | None) -> None:
+        with LLM_LOCK:
+            LLM_STATE["done"] += 1
+            if result is None:
+                LLM_STATE["failed"] += 1
+                return
+            LLM_STATE["predictions"][issue["ips_case_number"]] = {
+                "title": issue["ips_title"],
+                "technology": issue["technology"],
+                "category": result[0],
+                "confidence": round(float(result[1]), 4),
+                "llm_model": llm_model,
+                "predicted_at": datetime.now().isoformat(timespec="seconds"),
+            }
+
+    error = ""
+    try:
+        consecutive_failures = 0
+        batch_size = 4
+        with ThreadPoolExecutor(max_workers=batch_size) as pool:
+            for start in range(0, len(missing), batch_size):
+                for issue, result in pool.map(predict, missing[start : start + batch_size]):
+                    record(issue, result)
+                    consecutive_failures = consecutive_failures + 1 if result is None else 0
+                if consecutive_failures >= LLM_MAX_CONSECUTIVE_FAILURES:
+                    error = "LLM requests keep failing (for example HTTP 401/403). Check that GNAI_TOKEN in .env is valid and not expired, then restart the server."
+                    break
+                # Persist every batch so a crash or restart never re-spends tokens on finished issues.
+                _save_llm_predictions()
+    finally:
+        _save_llm_predictions()
+        with LLM_LOCK:
+            LLM_STATE.update(running=False, error=error, failed_at=datetime.now() if error else None)
+
+
+def _start_llm_backfill(queue: dict[str, dict]) -> None:
+    llm_model = category_model.llm_model_name()
+    if not llm_model:
+        return
+    missing = [issue for issue in queue.values() if _llm_prediction_for(issue) is None]
+    with LLM_LOCK:
+        if LLM_STATE["running"] or not missing:
+            return
+        if LLM_STATE["failed_at"] and datetime.now() - LLM_STATE["failed_at"] < LLM_RETRY_AFTER:
+            return
+        LLM_STATE.update(running=True, done=0, total=len(missing), failed=0, error="")
+    threading.Thread(target=_run_llm_backfill, args=(missing, llm_model), daemon=True).start()
+
+
+def _llm_status() -> dict:
+    with LLM_LOCK:
+        return {
+            "model": category_model.llm_model_name(),
+            "running": LLM_STATE["running"],
+            "done": LLM_STATE["done"],
+            "total": LLM_STATE["total"],
+            "failed": LLM_STATE["failed"],
+            "error": LLM_STATE["error"],
+        }
+
+
+def _llm_payload() -> dict:
+    predictions = {}
+    for case_number, issue in CATEGORY_CACHE["queue"].items():
+        cached = _llm_prediction_for(issue)
+        if cached:
+            predictions[case_number] = {"category": cached["category"], "confidence": cached["confidence"]}
+    return {"llm": _llm_status(), "predictions": predictions}
+
+
+def _load_category_prediction() -> dict:
+    queue = _load_category_queue()
+    _start_llm_backfill(queue)
+    reviews = _read_category_reviews()
+    issues = []
+    for case_number, issue in queue.items():
+        review = reviews.get(case_number)
+        llm = _llm_prediction_for(issue)
+        issues.append(
+            {
+                **issue,
+                "llm_category": llm["category"] if llm else None,
+                "llm_confidence": llm["confidence"] if llm else None,
+                "review": {
+                    key: review.get(key, "")
+                    for key in ("human_category", "verdict", "llm_category", "reviewer", "reviewed_at")
+                }
+                if review
+                else None,
+            }
+        )
+    return {
+        "year": CURRENT_YEAR,
+        "loaded_at": datetime.now().isoformat(timespec="seconds"),
+        "model": _category_model_status(),
+        "llm": _llm_status(),
+        "categories": _category_labels(),
+        "reviewers": sorted(CATEGORY_CACHE["reviewers"], key=str.casefold),
+        "review_file": CATEGORY_REVIEW_PATH.name,
+        "issues": issues,
+    }
+
+
+def _save_category_review(payload: dict) -> dict:
+    case_number = str(payload.get("ips_case_number") or "").strip()
+    human_category = str(payload.get("human_category") or "").strip()
+    reviewer = str(payload.get("reviewer") or "").strip()
+    if case_number not in CATEGORY_CACHE["queue"]:
+        _load_category_queue()
+    issue = CATEGORY_CACHE["queue"].get(case_number)
+    if issue is None:
+        raise ValueError("This issue is not in the current review list. Reload the page.")
+    if reviewer not in CATEGORY_CACHE["reviewers"]:
+        raise ValueError("Choose your name under 'Reviewing as' before saving.")
+    if human_category and human_category not in _category_labels():
+        raise ValueError("Pick a category from the list.")
+
+    with CATEGORY_LOCK:
+        reviews = _read_category_reviews()
+        if not human_category:
+            reviews.pop(case_number, None)
+            _write_category_reviews(reviews)
+            return {"ips_case_number": case_number, "review": None}
+        llm = _llm_prediction_for(issue)
+        review = {
+            "ips_title": issue["ips_title"],
+            "predicted_category": issue["predicted_category"],
+            "technology": issue["technology"],
+            "human_category": human_category,
+            "ips_case_number": case_number,
+            "verdict": "correct" if human_category == issue["predicted_category"] else "corrected",
+            "llm_category": llm["category"] if llm else "",
+            "reviewer": reviewer,
+            "reviewed_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        reviews[case_number] = review
+        _write_category_reviews(reviews)
+    return {
+        "ips_case_number": case_number,
+        "review": {key: review[key] for key in ("human_category", "verdict", "llm_category", "reviewer", "reviewed_at")},
+    }
+
+
 class LoadingDashboardHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -242,6 +621,12 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/field-issues":
             self._send_field_issues()
+            return
+        if parsed.path == "/api/category-prediction":
+            self._send_category_prediction()
+            return
+        if parsed.path == "/api/category-llm":
+            self._send_json(_llm_payload())
             return
         if parsed.path == "/api/loading":
             self._send_snapshot(parse_qs(parsed.query).get("date", ["latest"])[0])
@@ -263,6 +648,9 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/run-batch":
             self._start_batch()
+            return
+        if parsed.path == "/api/category-review":
+            self._save_category_review()
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -377,6 +765,35 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
                 {"issues": [], "message": f"Unable to query {FIELD_ISSUE_TABLE} ({type(exc).__name__})."},
                 HTTPStatus.INTERNAL_SERVER_ERROR,
             )
+
+    def _send_category_prediction(self) -> None:
+        try:
+            self._send_json(_load_category_prediction())
+        except FileNotFoundError:
+            self._send_json(
+                {"issues": [], "message": f"Category model not found: {CATEGORY_MODEL_PATH.name}."},
+                HTTPStatus.NOT_FOUND,
+            )
+        except Exception as exc:
+            self._send_json(
+                {"issues": [], "message": f"Unable to load predictions ({type(exc).__name__})."},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
+    def _save_category_review(self) -> None:
+        length = int(self.headers.get("Content-Length") or 0)
+        if not 0 < length <= 4096:
+            self._send_json({"message": "Invalid request body."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid request body.")
+            self._send_json(_save_category_review(payload))
+        except ValueError as exc:
+            self._send_json({"message": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self._send_json({"message": f"Unable to save review ({type(exc).__name__})."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _send_batch_status(self) -> None:
         global RUN_FINISHED_AT, RUN_RETURN_CODE

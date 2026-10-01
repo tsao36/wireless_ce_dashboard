@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Issue Category Prediction</title>
+  <style>
+    :root { color-scheme: light; --ink:#151C27; --muted:#44555F; --surface:#FAF9F3; --surface-2:#F0F3F5; --line:#7686A3; --hairline:#d8dce4; --accent:#BC704A; --accent-ink:#8F4E2F; --accent-soft:rgba(188,112,74,.14); --deep:#151C27; accent-color:var(--accent); }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    ::selection { color:var(--ink); background:#E8B99E; }
+    html { scrollbar-color:var(--line) transparent; }
+    body { margin:0; min-height:100vh; color:var(--ink); background:linear-gradient(145deg,#151C27 0%,#465962 52%,#536474 100%); font-family:"Segoe UI",Tahoma,sans-serif; font-size:14px; }
+    main { width:min(1240px,calc(100% - 32px)); margin:32px auto; }
+    :focus-visible { outline:3px solid rgba(188,112,74,.55); outline-offset:2px; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+
+    .masthead { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:20px; color:#FAF9F3; }
+    h1 { margin:0; font-size:clamp(28px,4vw,42px); text-shadow:0 1px 2px rgba(21,28,39,.45); }
+    .subtitle { max-width:70ch; margin:8px 0 0; line-height:1.45; }
+    .nav-link { flex:0 0 auto; padding:11px 16px; border:1px solid #FAF9F3; border-radius:6px; color:#FAF9F3; font-weight:700; text-decoration:none; }
+    .nav-link:hover,.nav-link:focus-visible { color:var(--ink); background:#FAF9F3; }
+
+    .panel { overflow:hidden; margin-bottom:16px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 18px 40px rgba(21,28,39,.22); }
+    .panel-head { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:18px 20px; border-bottom:1px solid var(--line); }
+    h2 { margin:0; font-size:20px; }
+    h3 { margin:0 0 10px; font-size:14px; }
+    .status-text { color:var(--muted); font-size:13px; }
+    .error { color:var(--accent-ink) !important; font-weight:700; }
+
+    .status-grid { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); }
+    .status-main { padding:22px 24px; }
+    .status-side { padding:22px 24px; background:var(--surface-2); border-left:1px solid var(--hairline); }
+    .scoreline { display:flex; flex-wrap:wrap; gap:18px 44px; margin:18px 0 16px; }
+    .score-value { display:block; font-size:44px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; }
+    .score-value.pending { color:var(--muted); }
+    .score-label { display:block; margin-top:6px; font-weight:700; }
+    .score-note { max-width:30ch; margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.4; }
+    .freshness { max-width:75ch; margin:0; padding-top:14px; border-top:1px solid var(--hairline); color:var(--muted); line-height:1.5; }
+    .freshness strong { color:var(--ink); }
+    .compare { margin:0 0 16px; }
+    .compare-table { width:100%; max-width:640px; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+    .compare-table th,.compare-table td { padding:8px 10px; border-bottom:1px solid var(--hairline); text-align:left; }
+    .compare-table thead th { color:var(--muted); font-size:12px; }
+    .compare-table td.num { font-size:18px; font-weight:800; }
+    .compare-table td.role { color:var(--muted); }
+    .compare-note { max-width:75ch; margin:8px 0 0; color:var(--muted); line-height:1.45; }
+    .progress { height:10px; margin:4px 0 8px; overflow:hidden; background:#fff; border:1px solid var(--hairline); border-radius:5px; }
+    .progress-fill { width:100%; height:100%; background:var(--accent); transform:scaleX(0); transform-origin:left; transition:transform .25s cubic-bezier(.16,1,.3,1); }
+    .side-note { margin:0 0 4px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .side-note strong { color:var(--ink); }
+    .side-block + .side-block { margin-top:20px; }
+    .leaderboard { margin:0; padding:0; list-style:none; font-variant-numeric:tabular-nums; }
+    .leaderboard li { display:flex; justify-content:space-between; gap:12px; padding:6px 0; border-bottom:1px solid var(--hairline); }
+    .leaderboard li.me { font-weight:800; }
+    .leaderboard-empty { margin:0; color:var(--muted); }
+
+    details.category-scores { border-top:1px solid var(--hairline); }
+    details.category-scores summary { padding:14px 24px; font-weight:700; cursor:pointer; }
+    details.category-scores summary:hover { background:var(--accent-soft); }
+    .scores-body { padding:0 24px 20px; }
+    .scores-body p { max-width:75ch; margin:0 0 10px; color:var(--muted); line-height:1.45; }
+    .scores-table { width:100%; max-width:720px; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+    .scores-table th,.scores-table td { padding:7px 10px; border-bottom:1px solid var(--hairline); text-align:right; }
+    .scores-table th:first-child,.scores-table td:first-child { text-align:left; }
+    .scores-table th { color:#FAF9F3; background:var(--deep); font-size:12px; }
+    .weak { color:var(--accent-ink); font-weight:700; }
+
+    .toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px 16px; padding:14px 20px; border-bottom:1px solid var(--line); }
+    .field { display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:12px; font-weight:700; }
+    .field select,.field input { min-height:36px; padding:7px 9px; border:1px solid var(--line); border-radius:5px; color:var(--ink); background:#fff; font:14px "Segoe UI",Tahoma,sans-serif; }
+    .field.reviewer select { min-width:190px; border-color:var(--accent); border-width:2px; }
+    .field.search input { width:min(260px,100%); }
+    .segmented { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+    .segmented button { min-height:36px; padding:7px 12px; border:0; color:var(--ink); background:#fff; font:700 13px "Segoe UI",Tahoma,sans-serif; font-variant-numeric:tabular-nums; cursor:pointer; }
+    .segmented button + button { border-left:1px solid var(--line); }
+    .segmented button:hover { background:var(--accent-soft); }
+    .segmented button[aria-pressed="true"] { color:#FAF9F3; background:var(--deep); }
+    .hint { margin:0; padding:10px 20px; color:var(--accent-ink); background:var(--accent-soft); border-bottom:1px solid var(--hairline); font-weight:700; }
+
+    .table-wrap { overflow-x:auto; }
+    .review-table { width:100%; min-width:980px; border-collapse:collapse; }
+    .review-table th { padding:10px 12px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:nowrap; font-size:13px; }
+    .review-table td { padding:10px 12px; border-bottom:1px solid var(--hairline); vertical-align:top; }
+    .review-table tbody tr:nth-child(even) td { background:var(--surface-2); }
+    .review-table tbody tr.just-saved td { background:#EEF3EC; }
+    .review-table td.nowrap { white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .review-table td.title { min-width:280px; max-width:460px; line-height:1.4; overflow-wrap:anywhere; }
+    .review-table a { color:var(--ink); font-weight:700; text-underline-offset:3px; }
+    .prediction { display:flex; flex-direction:column; gap:5px; min-width:170px; }
+    .prediction strong { font-size:14px; }
+    .pred-line { display:flex; align-items:baseline; gap:8px; }
+    .pred-source { min-width:30px; color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.04em; }
+    .pred-line.llm { padding-top:5px; border-top:1px dashed var(--hairline); }
+    .pred-line.llm .pending-text { color:var(--muted); font-style:italic; }
+    .pred-line.differs strong { color:var(--accent-ink); }
+    .differs-tag { color:var(--accent-ink); font-size:11px; font-weight:700; }
+    .confidence { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+    .confidence-bar { width:64px; height:6px; overflow:hidden; background:#fff; border:1px solid var(--hairline); border-radius:3px; }
+    .confidence-bar span { display:block; height:100%; background:var(--line); }
+    .call { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:250px; }
+    .confirm { min-height:34px; padding:6px 12px; border:1px solid var(--deep); border-radius:5px; color:#FAF9F3; background:var(--deep); font:700 13px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
+    .confirm:hover { background:#2A3546; }
+    .confirm.alt { color:var(--ink); background:#fff; border-color:var(--accent); }
+    .confirm.alt:hover { background:var(--accent-soft); }
+    .field.check { flex-direction:row; align-items:center; gap:6px; min-height:36px; color:var(--ink); font-size:13px; }
+    .field.check input { width:16px; height:16px; }
+    .correct-select { min-height:34px; max-width:170px; padding:6px 8px; border:1px solid var(--line); border-radius:5px; color:var(--ink); background:#fff; font:13px "Segoe UI",Tahoma,sans-serif; }
+    .confirm:disabled,.correct-select:disabled { cursor:not-allowed; opacity:.5; }
+    .verdict { display:flex; flex-direction:column; gap:2px; }
+    .verdict strong.corrected { color:var(--accent-ink); }
+    .verdict span { color:var(--muted); font-size:12px; }
+    .undo { padding:4px 0; border:0; color:var(--ink); background:none; font:700 12px "Segoe UI",Tahoma,sans-serif; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+    .undo:hover { color:var(--accent-ink); }
+    .skeleton td span { display:block; height:12px; border-radius:4px; background:linear-gradient(90deg,#e6e9ee 0%,#f3f5f7 50%,#e6e9ee 100%); background-size:200% 100%; animation:shimmer 1.2s ease-in-out infinite; }
+    @keyframes shimmer { from { background-position:100% 0; } to { background-position:-100% 0; } }
+    .table-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 20px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .show-more { min-height:34px; padding:6px 14px; border:1px solid var(--accent); border-radius:5px; color:var(--ink); background:transparent; font:700 13px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
+    .show-more:hover { background:var(--accent-soft); }
+    .empty { padding:36px 20px; color:var(--muted); text-align:center; line-height:1.5; }
+    .footnote { max-width:90ch; margin:0 0 24px; color:#FAF9F3; font-size:12px; line-height:1.5; }
+    .toast { position:fixed; z-index:10; right:20px; bottom:20px; max-width:min(380px,calc(100% - 40px)); padding:12px 16px; color:#FAF9F3; background:var(--deep); border-top:1px solid var(--accent); border-radius:6px; box-shadow:0 12px 32px rgba(21,28,39,.32); font-weight:700; }
+    .toast[hidden] { display:none; }
+    @media (prefers-reduced-motion: reduce) { .skeleton td span { animation:none; } .progress-fill { transition:none; } }
+    @media (max-width:760px) {
+      main { width:calc(100% - 20px); margin:18px auto; }
+      .masthead { display:block; }
+      .nav-link { display:inline-block; margin-top:14px; }
+      .status-grid { grid-template-columns:1fr; }
+      .status-side { border-left:0; border-top:1px solid var(--hairline); }
+      .score-value { font-size:36px; }
+      .toolbar { display:grid; grid-template-columns:1fr 1fr; }
+      .field.reviewer,.segmented-field { grid-column:1 / -1; }
+      .field select,.field input,.field.search input { width:100%; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <div>
+        <h1>Issue Category Prediction</h1>
+        <p class="subtitle">The ML model sorts IPS issues into categories that drive weighted loading. It has not learned from 2026 intake yet. Confirm or correct its guesses below; every review becomes a training example for the next retrain.</p>
+      </div>
+      <a class="nav-link" href="index.html">Back to dashboard</a>
+    </header>
+
+    <section class="panel" aria-labelledby="status-title">
+      <div class="status-grid">
+        <div class="status-main">
+          <h2 id="status-title">How accurate is the model?</h2>
+          <div class="scoreline">
+            <div>
+              <span class="score-value" id="holdout-accuracy">–</span>
+              <span class="score-label">Holdout accuracy</span>
+              <p class="score-note" id="holdout-note">Loading model metrics...</p>
+            </div>
+            <div>
+              <span class="score-value pending" id="team-accuracy">–</span>
+              <span class="score-label" id="team-accuracy-label">ML right on reviewed 2026 issues</span>
+              <p class="score-note" id="team-accuracy-note">Measured from your team's reviews.</p>
+            </div>
+          </div>
+          <div class="compare">
+            <h3 id="compare-title">ML vs LLM on reviewed 2026 issues</h3>
+            <table class="compare-table" aria-labelledby="compare-title">
+              <thead><tr><th scope="col">Predictor</th><th scope="col">Right</th><th scope="col">Reviews compared</th><th scope="col">Used for</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">ML model</th><td class="num" id="ml-acc">–</td><td id="ml-n">0</td><td class="role">Weighted loading</td></tr>
+                <tr><th scope="row" id="llm-name">LLM</th><td class="num" id="llm-acc">–</td><td id="llm-n">0</td><td class="role">Monitoring only</td></tr>
+              </tbody>
+            </table>
+            <p class="compare-note" id="compare-note"></p>
+          </div>
+          <p class="freshness" id="freshness">Loading training status...</p>
+        </div>
+        <div class="status-side">
+          <div class="side-block">
+            <h3 id="progress-title">2026 review progress</h3>
+            <div class="progress" role="progressbar" aria-labelledby="progress-title" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress"><div class="progress-fill" id="progress-fill"></div></div>
+            <p class="side-note" id="progress-text">–</p>
+            <p class="side-note" id="pending-text"></p>
+          </div>
+          <div class="side-block">
+            <h3>Top reviewers</h3>
+            <ol class="leaderboard" id="leaderboard"></ol>
+            <p class="leaderboard-empty" id="leaderboard-empty" hidden>No reviews yet. The first name on this list could be yours.</p>
+          </div>
+        </div>
+      </div>
+      <details class="category-scores">
+        <summary>Per-category holdout scores, weakest first</summary>
+        <div class="scores-body">
+          <p id="scores-note">Categories with few labeled examples score lowest. Reviews in those categories help the most.</p>
+          <table class="scores-table"><thead><tr><th scope="col">Category</th><th scope="col">F1</th><th scope="col">Precision</th><th scope="col">Recall</th><th scope="col">Test issues</th></tr></thead><tbody id="scores-body"></tbody></table>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel" aria-labelledby="review-title">
+      <div class="panel-head"><h2 id="review-title">Review 2026 predictions</h2><span class="status-text" id="status" role="status" aria-live="polite">Loading predictions...</span></div>
+      <div class="toolbar">
+        <label class="field reviewer">Reviewing as<select id="reviewer"><option value="">Choose your name</option></select></label>
+        <div class="field segmented-field"><span id="show-label">Show</span><div class="segmented" role="group" aria-labelledby="show-label">
+          <button type="button" data-filter="todo" aria-pressed="true">To review <span id="count-todo"></span></button>
+          <button type="button" data-filter="reviewed" aria-pressed="false">Reviewed <span id="count-reviewed"></span></button>
+          <button type="button" data-filter="all" aria-pressed="false">All <span id="count-all"></span></button>
+        </div></div>
+        <label class="field">Owner<select id="owner-filter"><option value="">All owners</option><option value="__mine" id="mine-option" disabled>My issues</option></select></label>
+        <label class="field">Predicted as<select id="category-filter"><option value="">Any category</option></select></label>
+        <label class="field">Sort<select id="sort"><option value="confidence">Least confident first</option><option value="newest">Newest first</option></select></label>
+        <label class="field search">Search<input id="search" type="search" placeholder="Case number or title"></label>
+        <label class="field check"><input type="checkbox" id="disagree-only">Only where ML and LLM disagree</label>
+      </div>
+      <p class="hint" id="reviewer-hint">Choose your name under “Reviewing as” to start reviewing.</p>
+      <div class="table-wrap">
+        <table class="review-table">
+          <thead><tr><th scope="col">IPS case</th><th scope="col">Created</th><th scope="col">Title</th><th scope="col">Tech</th><th scope="col">Owner</th><th scope="col">Predictions</th><th scope="col">Your call</th></tr></thead>
+          <tbody id="review-body"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="empty" hidden></div>
+      <div class="table-footer" id="table-footer" hidden><span id="showing"></span><button class="show-more" type="button" id="show-more">Show 50 more</button></div>
+    </section>
+    <p class="footnote" id="footnote">Weighted loading uses the ML model. LLM predictions are shown for comparison only. Reviews are saved to the tuning project's CFE_input folder, where the weekly tuning run picks them up. Software (CIE) issues are always ICPS/Killer by rule, so they are not listed.</p>
+  </main>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script>
+    const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8010' : '';
+    const PAGE_SIZE = 50;
+    const MIN_REVIEWS_FOR_ACCURACY = 10;
+    const plural = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`;
+    const REVIEWER_KEY = 'category-prediction-reviewer';
+    const $ = selector => document.querySelector(selector);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const pct = value => value == null ? '–' : `${(Number(value) * 100).toFixed(1)}%`;
+    const link = (label, url) => /^https:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label);
+    const state = { data: null, filter: 'todo', shown: PAGE_SIZE, keepVisible: new Set(), saving: new Set() };
+    let toastTimer;
+
+    function showToast(message) {
+      const toast = $('#toast'); toast.textContent = message; toast.hidden = false;
+      window.clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { toast.hidden = true; }, 4000);
+    }
+    const reviewer = () => $('#reviewer').value;
+
+    function renderModel() {
+      const model = state.data.model || {};
+      $('#holdout-accuracy').textContent = pct(model.accuracy);
+      $('#holdout-note').textContent = model.available
+        ? `Tested on ${model.test_rows ?? '?'} labeled issues the model never saw during training. Macro F1 ${pct(model.macro_f1)}.`
+        : 'Model metrics file is not available.';
+      const parts = [];
+      if (model.trained_at) parts.push(`Model trained <strong>${esc(model.trained_at)}</strong> on <strong>${esc(model.rows_used ?? '?')}</strong> labeled issues.`);
+      if (model.latest_human_labels_at) parts.push(`Last human labels added <strong>${esc(model.latest_human_labels_at)}</strong>${model.latest_human_responses != null ? ` (${esc(model.latest_human_responses)} responses)` : ''}.`);
+      if (model.latest_weekly_run) parts.push(`Latest weekly tuning run ${esc(model.latest_weekly_run.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))}: ${model.latest_promoted ? 'new model promoted' : 'kept the current model'}.`);
+      $('#freshness').innerHTML = parts.join(' ') || 'Training status is not available.';
+      const scores = [...(model.per_category || [])].sort((a, b) => Number(a.f1) - Number(b.f1));
+      $('#scores-body').innerHTML = scores.map(row => `<tr><td>${esc(row.category)}</td><td class="${Number(row.f1) < 0.7 ? 'weak' : ''}">${pct(row.f1)}</td><td>${pct(row.precision)}</td><td>${pct(row.recall)}</td><td>${esc(row.support ?? '')}</td></tr>`).join('');
+      const dropped = model.dropped_rare_labels || [];
+      $('#scores-note').textContent = `Categories with few labeled examples score lowest; reviews in those categories help the most.${dropped.length ? ` Not enough examples to learn at all yet: ${dropped.join(', ')}.` : ''}`;
+    }
+
+    function renderStats() {
+      const issues = state.data.issues;
+      const reviewed = issues.filter(issue => issue.review);
+      const correct = reviewed.filter(issue => issue.review.verdict === 'correct').length;
+      const teamAccuracy = $('#team-accuracy');
+      const enough = reviewed.length >= MIN_REVIEWS_FOR_ACCURACY;
+      teamAccuracy.textContent = enough ? pct(correct / reviewed.length) : '–';
+      teamAccuracy.classList.toggle('pending', !enough);
+      $('#team-accuracy-note').textContent = enough
+        ? `${correct} confirmed, ${reviewed.length - correct} corrected across ${plural(reviewed.length, 'reviewed issue')}.`
+        : `Shown after ${MIN_REVIEWS_FOR_ACCURACY} reviews. ${MIN_REVIEWS_FOR_ACCURACY - reviewed.length} to go.`;
+      const share = issues.length ? reviewed.length / issues.length : 0;
+      $('#progress-fill').style.transform = `scaleX(${share})`;
+      $('#progress').setAttribute('aria-valuenow', (share * 100).toFixed(0));
+      $('#progress-text').innerHTML = `<strong>${reviewed.length}</strong> of ${issues.length} issues reviewed (${(share * 100).toFixed(1)}%)`;
+      const trainedAt = state.data.model?.trained_at || '';
+      const pending = reviewed.filter(issue => (issue.review.reviewed_at || '').slice(0, 10) > trainedAt).length;
+      $('#pending-text').innerHTML = pending ? `<strong>${pending}</strong> new training ${pending === 1 ? 'example' : 'examples'} waiting for the next retrain` : '';
+      const counts = new Map();
+      reviewed.forEach(issue => counts.set(issue.review.reviewer, (counts.get(issue.review.reviewer) || 0) + 1));
+      const leaders = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 5);
+      $('#leaderboard').innerHTML = leaders.map(([name, count]) => `<li class="${name === reviewer() ? 'me' : ''}"><span>${esc(name)}</span><span>${count}</span></li>`).join('');
+      $('#leaderboard-empty').hidden = leaders.length > 0;
+      renderComparison();
+    }
+
+    const llmAnswer = issue => issue.review?.llm_category || issue.llm_category || '';
+
+    function renderComparison() {
+      const issues = state.data.issues;
+      const llm = state.data.llm || {};
+      const reviewed = issues.filter(issue => issue.review);
+      const withLlm = reviewed.filter(issue => llmAnswer(issue));
+      const mlRight = reviewed.filter(issue => issue.review.verdict === 'correct').length;
+      const llmRight = withLlm.filter(issue => llmAnswer(issue) === issue.review.human_category).length;
+      const show = (count, total) => total >= MIN_REVIEWS_FOR_ACCURACY ? pct(count / total) : '–';
+      $('#ml-acc').textContent = show(mlRight, reviewed.length);
+      $('#ml-n').textContent = reviewed.length;
+      $('#llm-acc').textContent = show(llmRight, withLlm.length);
+      $('#llm-n').textContent = withLlm.length;
+      $('#llm-name').textContent = llm.model ? `LLM (${llm.model})` : 'LLM';
+      const scored = issues.filter(issue => issue.llm_category);
+      const agree = scored.filter(issue => issue.llm_category === issue.predicted_category).length;
+      const notes = [];
+      if (!llm.model) notes.push('LLM is not configured on this server (GNAI_TOKEN in .env), so only the ML model is shown.');
+      else {
+        if (llm.error) notes.push(`LLM unavailable: ${llm.error} Retrying in 30 minutes.`);
+        if (scored.length) notes.push(`ML and LLM agree on ${pct(agree / scored.length)} of the ${scored.length} issues the LLM has scored.`);
+        if (llm.running) notes.push(`LLM scoring in progress: ${llm.done} of ${llm.total} issues this run${llm.failed ? `, ${llm.failed} failed` : ''}.`);
+        else if (llm.failed && !llm.error) notes.push(`${plural(llm.failed, 'LLM request')} failed last run; they retry on the next page load.`);
+      }
+      notes.push(`Accuracy appears after ${MIN_REVIEWS_FOR_ACCURACY} reviews.`);
+      $('#compare-note').textContent = notes.join(' ');
+    }
+
+    function matchesBaseFilters(issue) {
+      const owner = $('#owner-filter').value;
+      const category = $('#category-filter').value;
+      const search = $('#search').value.trim().toLowerCase();
+      if (owner === '__mine' ? issue.engineer !== reviewer() : owner && issue.engineer !== owner) return false;
+      if (category && issue.predicted_category !== category) return false;
+      if ($('#disagree-only').checked && (!issue.llm_category || issue.llm_category === issue.predicted_category)) return false;
+      return !search || `${issue.ips_case_number} ${issue.ips_title}`.toLowerCase().includes(search);
+    }
+
+    function visibleIssues() {
+      const sort = $('#sort').value;
+      return state.data.issues.filter(issue => {
+        if (!matchesBaseFilters(issue)) return false;
+        if (state.filter === 'todo') return !issue.review || state.keepVisible.has(issue.ips_case_number);
+        if (state.filter === 'reviewed') return Boolean(issue.review);
+        return true;
+      }).sort((a, b) => sort === 'newest'
+        ? b.created.localeCompare(a.created) || b.ips_case_number.localeCompare(a.ips_case_number)
+        : a.confidence - b.confidence || b.created.localeCompare(a.created));
+    }
+
+    function callCell(issue) {
+      const busy = state.saving.has(issue.ips_case_number);
+      const disabled = !reviewer() || busy ? 'disabled' : '';
+      if (issue.review) {
+        const corrected = issue.review.verdict === 'corrected';
+        const llm = llmAnswer(issue);
+        const llmVerdict = llm ? ` · LLM ${llm === issue.review.human_category ? 'right' : 'wrong'}` : '';
+        return `<div class="call"><div class="verdict"><strong class="${corrected ? 'corrected' : ''}">${corrected ? `Corrected to ${esc(issue.review.human_category)}` : 'ML confirmed correct'}</strong><span>by ${esc(issue.review.reviewer)} · ${esc((issue.review.reviewed_at || '').slice(0, 10))}${esc(llmVerdict)}</span></div><button class="undo" type="button" data-action="undo" ${disabled} aria-label="Undo review of case ${esc(issue.ips_case_number)}">Undo</button></div>`;
+      }
+      const differs = issue.llm_category && issue.llm_category !== issue.predicted_category;
+      const shown = differs ? [issue.predicted_category, issue.llm_category] : [issue.predicted_category];
+      const options = state.data.categories.filter(name => !shown.includes(name)).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+      const buttons = differs
+        ? `<button class="confirm" type="button" data-action="pick" data-category="${esc(issue.predicted_category)}" ${disabled} aria-label="ML is right: ${esc(issue.predicted_category)} for case ${esc(issue.ips_case_number)}">${esc(issue.predicted_category)} (ML)</button><button class="confirm alt" type="button" data-action="pick" data-category="${esc(issue.llm_category)}" ${disabled} aria-label="LLM is right: ${esc(issue.llm_category)} for case ${esc(issue.ips_case_number)}">${esc(issue.llm_category)} (LLM)</button>`
+        : `<button class="confirm" type="button" data-action="pick" data-category="${esc(issue.predicted_category)}" ${disabled} aria-label="Prediction ${esc(issue.predicted_category)} is correct for case ${esc(issue.ips_case_number)}">Correct</button>`;
+      return `<div class="call">${buttons}<select class="correct-select" data-action="correct" ${disabled} aria-label="Pick the right category for case ${esc(issue.ips_case_number)}"><option value="">${differs ? 'Neither, pick...' : 'Wrong, pick...'}</option>${options}</select></div>`;
+    }
+
+    function llmLine(issue) {
+      if (issue.llm_category) {
+        const differs = issue.llm_category !== issue.predicted_category;
+        return `<div class="pred-line llm ${differs ? 'differs' : ''}"><span class="pred-source">LLM</span><strong>${esc(issue.llm_category)}</strong>${differs ? '<span class="differs-tag">differs</span>' : ''}</div>`;
+      }
+      const llm = state.data.llm || {};
+      return llm.model ? `<div class="pred-line llm"><span class="pred-source">LLM</span><span class="pending-text">${llm.running ? 'scoring...' : llm.error ? 'unavailable' : 'not scored'}</span></div>` : '';
+    }
+
+    function rowHtml(issue) {
+      const confidence = Math.round(issue.confidence * 100);
+      return `<tr data-case="${esc(issue.ips_case_number)}" class="${state.keepVisible.has(issue.ips_case_number) ? 'just-saved' : ''}">
+        <td class="nowrap">${link(issue.ips_case_number, issue.ips_url)}</td>
+        <td class="nowrap">${esc(issue.created)}</td>
+        <td class="title">${esc(issue.ips_title)}</td>
+        <td class="nowrap">${esc(issue.technology || '–')}</td>
+        <td class="nowrap">${esc(issue.engineer)}</td>
+        <td><div class="prediction"><div class="pred-line"><span class="pred-source">ML</span><strong>${esc(issue.predicted_category)}</strong></div><span class="confidence"><span class="confidence-bar" aria-hidden="true"><span style="width:${confidence}%"></span></span>${confidence}% confident</span>${llmLine(issue)}</div></td>
+        <td>${callCell(issue)}</td>
+      </tr>`;
+    }
+
+    function renderTable() {
+      const issues = visibleIssues();
+      const base = state.data.issues.filter(matchesBaseFilters);
+      $('#count-todo').textContent = `(${base.filter(issue => !issue.review).length})`;
+      $('#count-reviewed').textContent = `(${base.filter(issue => issue.review).length})`;
+      $('#count-all').textContent = `(${base.length})`;
+      $('#review-body').innerHTML = issues.slice(0, state.shown).map(rowHtml).join('');
+      const empty = $('#empty');
+      empty.hidden = issues.length > 0;
+      empty.textContent = state.filter === 'todo' && base.length ? 'Everything in this view has been reviewed. Nice work. Try another owner or category.' : 'No issues match these filters.';
+      $('#table-footer').hidden = issues.length === 0;
+      $('#showing').textContent = `Showing ${Math.min(state.shown, issues.length)} of ${issues.length}`;
+      $('#show-more').hidden = state.shown >= issues.length;
+      $('#reviewer-hint').hidden = Boolean(reviewer());
+    }
+
+    function updateRow(issue) {
+      const row = $('#review-body').querySelector(`tr[data-case="${CSS.escape(issue.ips_case_number)}"]`);
+      if (row) row.outerHTML = rowHtml(issue);
+    }
+
+    async function saveReview(issue, humanCategory) {
+      state.saving.add(issue.ips_case_number); updateRow(issue);
+      try {
+        const response = await fetch(`${API_BASE}/api/category-review`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ips_case_number: issue.ips_case_number, human_category: humanCategory, reviewer: reviewer() }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
+        issue.review = result.review;
+        state.keepVisible.add(issue.ips_case_number);
+        const total = state.data.issues.filter(item => item.review).length;
+        showToast(humanCategory ? `Saved. ${plural(total, 'issue')} reviewed so far. Thank you!` : 'Review removed.');
+      } catch (error) {
+        showToast(`Could not save: ${error.message}`);
+      } finally {
+        state.saving.delete(issue.ips_case_number); updateRow(issue); renderStats();
+        const base = state.data.issues.filter(matchesBaseFilters);
+        $('#count-todo').textContent = `(${base.filter(item => !item.review).length})`;
+        $('#count-reviewed').textContent = `(${base.filter(item => item.review).length})`;
+      }
+    }
+
+    function resetView() { state.shown = PAGE_SIZE; state.keepVisible.clear(); renderTable(); }
+
+    let llmTimer;
+    async function pollLlm() {
+      try {
+        const response = await fetch(`${API_BASE}/api/category-llm`, { cache: 'no-store' });
+        const result = await response.json();
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        state.data.llm = result.llm;
+        state.data.issues.forEach(issue => {
+          const prediction = result.predictions[issue.ips_case_number];
+          if (!prediction || prediction.category === issue.llm_category) return;
+          issue.llm_category = prediction.category; issue.llm_confidence = prediction.confidence;
+          const row = $('#review-body').querySelector(`tr[data-case="${CSS.escape(issue.ips_case_number)}"]`);
+          if (row && !row.contains(document.activeElement)) updateRow(issue);
+        });
+        renderComparison();
+      } catch (error) {
+        state.data.llm = { ...(state.data.llm || {}), running: false };
+      }
+      if (state.data.llm?.running) llmTimer = window.setTimeout(pollLlm, 10000);
+      else renderTable();
+    }
+
+    async function load() {
+      const status = $('#status');
+      $('#review-body').innerHTML = Array.from({ length: 6 }, () => `<tr class="skeleton">${'<td><span></span></td>'.repeat(7)}</tr>`).join('');
+      try {
+        const response = await fetch(`${API_BASE}/api/category-prediction`, { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+        state.data = data;
+        const saved = localStorage.getItem(REVIEWER_KEY) || '';
+        $('#reviewer').innerHTML = '<option value="">Choose your name</option>' + data.reviewers.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+        $('#reviewer').value = data.reviewers.includes(saved) ? saved : '';
+        const owners = [...new Set(data.issues.map(issue => issue.engineer))].sort((a, b) => a.localeCompare(b));
+        $('#owner-filter').innerHTML = `<option value="">All owners</option><option value="__mine" id="mine-option">My issues</option>${owners.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('')}`;
+        $('#mine-option').disabled = !reviewer();
+        const predicted = [...new Set(data.issues.map(issue => issue.predicted_category))].sort((a, b) => a.localeCompare(b));
+        $('#category-filter').innerHTML = '<option value="">Any category</option>' + predicted.map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+        $('#footnote').textContent = `Weighted loading uses the ML model; LLM predictions are shown for comparison only. Reviews are saved to ${data.review_file} in the tuning project's CFE_input folder, where the weekly tuning run picks them up. Software (CIE) issues are always ICPS/Killer by rule, so they are not listed.`;
+        $('#review-title').textContent = `Review ${data.year} predictions`;
+        renderModel(); renderStats(); renderTable();
+        status.classList.remove('error'); status.textContent = `${data.issues.length} issues created in ${data.year}`;
+        window.clearTimeout(llmTimer);
+        if (data.llm?.running) llmTimer = window.setTimeout(pollLlm, 10000);
+      } catch (error) {
+        $('#review-body').innerHTML = '';
+        status.classList.add('error'); status.textContent = `Unable to load predictions: ${error.message}`;
+        $('#freshness').textContent = 'Model status is unavailable until predictions load.';
+      }
+    }
+
+    $('#reviewer').addEventListener('change', () => {
+      localStorage.setItem(REVIEWER_KEY, reviewer());
+      $('#mine-option').disabled = !reviewer();
+      const owners = [...$('#owner-filter').options].map(option => option.value);
+      if (reviewer() && !$('#owner-filter').value && owners.includes(reviewer())) $('#owner-filter').value = '__mine';
+      if (!reviewer() && $('#owner-filter').value === '__mine') $('#owner-filter').value = '';
+      renderStats(); resetView();
+    });
+    document.querySelectorAll('.segmented button').forEach(button => button.addEventListener('click', () => {
+      state.filter = button.dataset.filter;
+      document.querySelectorAll('.segmented button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      resetView();
+    }));
+    ['#owner-filter', '#category-filter', '#sort', '#disagree-only'].forEach(selector => $(selector).addEventListener('change', resetView));
+    $('#search').addEventListener('input', resetView);
+    $('#show-more').addEventListener('click', () => { state.shown += PAGE_SIZE; renderTable(); });
+    const issueFor = element => state.data.issues.find(issue => issue.ips_case_number === element.closest('tr').dataset.case);
+    $('#review-body').addEventListener('click', event => {
+      const button = event.target.closest('button[data-action]'); if (!button) return;
+      saveReview(issueFor(button), button.dataset.action === 'pick' ? button.dataset.category : '');
+    });
+    $('#review-body').addEventListener('change', event => {
+      const select = event.target.closest('select[data-action="correct"]'); if (!select || !select.value) return;
+      saveReview(issueFor(select), select.value);
+    });
+    load();
+  </script>
+</body>
+</html>

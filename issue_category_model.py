@@ -30,10 +30,16 @@ if load_dotenv is not None:
 
 
 _LOG = logging.getLogger(__name__)
-_DEFAULT_BASE_URL = (os.getenv("EXPERTGPT_URL") or "https://expertgpt.intel.com").strip()
-_DEFAULT_MODEL = (os.getenv("EXPERTGPT_MODEL") or os.getenv("MODEL") or "").strip()
-_DEFAULT_API_KEY = (os.getenv("EXPERTGPT_TOKEN") or "").strip()
-_PREDICT_BACKEND = (os.getenv("ISSUE_CATEGORY_PREDICT_BACKEND") or "llm").strip().lower()
+# Prefer GNAI; ExpertGPT settings are used only when no GNAI token is configured.
+if (os.getenv("GNAI_TOKEN") or "").strip():
+    _DEFAULT_BASE_URL = (os.getenv("GNAI_URL") or "https://gnai.intel.com/api/providers/openai/v1").strip()
+    _DEFAULT_MODEL = (os.getenv("GNAI_MODEL") or "gpt-4.1").strip()
+    _DEFAULT_API_KEY = (os.getenv("GNAI_TOKEN") or "").strip()
+else:
+    _DEFAULT_BASE_URL = (os.getenv("EXPERTGPT_URL") or "https://expertgpt.intel.com").strip()
+    _DEFAULT_MODEL = (os.getenv("EXPERTGPT_MODEL") or os.getenv("MODEL") or "").strip()
+    _DEFAULT_API_KEY = (os.getenv("EXPERTGPT_TOKEN") or "").strip()
+_PREDICT_BACKEND = (os.getenv("ISSUE_CATEGORY_PREDICT_BACKEND") or "ml").strip().lower()
 _LLM_TIMEOUT_SECONDS = float((os.getenv("ISSUE_CATEGORY_LLM_TIMEOUT_SEC") or "30").strip() or 30)
 _LLM_CLIENT: Any = None
 
@@ -352,6 +358,11 @@ def _normalize_predicted_category(category: str) -> str:
     return _LEGACY_CATEGORY_MAP.get(category.strip().lower(), category)
 
 
+def llm_model_name() -> str:
+    """Configured LLM model name, or empty when the LLM backend is not configured."""
+    return _DEFAULT_MODEL if _DEFAULT_MODEL and _DEFAULT_API_KEY else ""
+
+
 def classify_issue_title(
     model_bundle: Dict[str, Any],
     title: str,
@@ -359,6 +370,7 @@ def classify_issue_title(
     predicted_category: str = "",
     technology: str = "",
     description: str = "",
+    use_llm: bool = True,
 ) -> Tuple[str, float]:
     pipeline = model_bundle.get("pipeline")
 
@@ -371,7 +383,7 @@ def classify_issue_title(
         return overridden, 0.99
 
     labels = [str(x).strip() for x in (model_bundle.get("labels") or []) if str(x).strip()]
-    if _PREDICT_BACKEND != "ml":
+    if use_llm and _PREDICT_BACKEND != "ml":
         llm_result = _llm_predict_category(
             title=title,
             description=description,
@@ -395,6 +407,32 @@ def classify_issue_title(
     )
     raw_category, confidence = _predict_with_confidence(pipeline, feature_text)
     return _normalize_predicted_category(raw_category), confidence
+
+
+def classify_issue_title_llm(
+    model_bundle: Dict[str, Any],
+    title: str,
+    *,
+    technology: str = "",
+    description: str = "",
+) -> Tuple[str, float] | None:
+    """LLM-only prediction with the same business rules; None when the LLM is unavailable or fails."""
+    if _norm_technology(technology) == "software":
+        return "ICPS/Killer", 1.0
+    overridden = _override_category_from_text(title, description=description)
+    if overridden:
+        return overridden, 0.99
+    labels = [str(x).strip() for x in (model_bundle.get("labels") or []) if str(x).strip()]
+    result = _llm_predict_category(
+        title=title,
+        description=description,
+        predicted_category="",
+        technology=technology,
+        categories=labels,
+    )
+    if result is None:
+        return None
+    return _normalize_predicted_category(result[0]), result[1]
 
 
 def calculate_weight_for_category(
