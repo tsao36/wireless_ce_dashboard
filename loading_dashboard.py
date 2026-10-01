@@ -856,7 +856,7 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         except FileNotFoundError as exc:
             self._send_json(
                 {"available": False, "message": f"Workbook unavailable: {exc}"},
-                HTTPStatus.NOT_FOUND,
+                HTTPStatus.OK,
             )
         except Exception as exc:
             self._send_json(
