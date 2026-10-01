@@ -245,7 +245,9 @@
             button.disabled = true; button.textContent = 'Refreshing...'; status.classList.remove('error'); status.textContent = 'Reading workbook...';
             try {
               const response = await fetch(`${API_BASE}/api/activity`, { cache: 'no-store' });
-              const result = await response.json();
+              const responseText = await response.text();
+              let result;
+              try { result = JSON.parse(responseText); } catch (parseError) { throw new Error(`Server returned HTTP ${response.status} instead of JSON.`); }
               if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
               const selectedCategory = document.querySelector('#activity-category').value;
               const selectedSheet = document.querySelector('#activity-sheet').value;
