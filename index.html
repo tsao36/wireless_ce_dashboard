@@ -151,7 +151,7 @@
 </head>
 <body>
   <main>
-    <header class="masthead"><div><h1>Wireless CE Team Dashboard</h1><p class="subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button></div></header>
+    <header class="masthead"><div><h1>Wireless CE Team Dashboard</h1><p class="subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button><button class="run-batch" type="button" id="restart-server">Restart server</button></div></header>
     <div class="view-switch" role="tablist" aria-label="Dashboard views">
       <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="false" aria-controls="activity-view" tabindex="-1">Team activity</button>
       <button class="view-tab" id="loading-tab" type="button" role="tab" aria-selected="true" aria-controls="loading-view">Team loading</button>
@@ -373,6 +373,23 @@
         else { showToast(`Daily loading ended with code ${state.return_code ?? 'unknown'}.`); }
       } catch (error) { runButton.disabled = false; runButton.textContent = 'Run daily loading'; showToast(`Unable to run daily loading: ${error.message}`); }
     }
+    const restartButton = document.querySelector('#restart-server');
+    async function restartServer() {
+      if (!window.confirm('Restart the dashboard server? Everyone using the site will lose the connection for about a minute.')) return;
+      restartButton.disabled = true; restartButton.textContent = 'Restarting...';
+      try {
+        const response = await fetch(`${API_BASE}/api/restart`, { method: 'POST' });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
+        showToast('Server is restarting. The page will reload when it is back.');
+        await new Promise(resolve => window.setTimeout(resolve, 8000));
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          try { if ((await fetch(`${API_BASE}/api/dates`, { cache: 'no-store' })).ok) { window.location.reload(); return; } } catch (error) { /* still restarting */ }
+          await new Promise(resolve => window.setTimeout(resolve, 3000));
+        }
+        throw new Error('the server did not come back within 2 minutes');
+      } catch (error) { restartButton.disabled = false; restartButton.textContent = 'Restart server'; showToast(`Restart failed: ${error.message}`); }
+    }
     document.querySelector('#date-filter').addEventListener('change', loadSnapshot);
         document.querySelector('#activity-category').addEventListener('change', () => updateActivitySheets());
         document.querySelector('#activity-sheet').addEventListener('change', renderActivitySheet);
@@ -392,6 +409,7 @@
     document.querySelector('#sort-filter').addEventListener('change', () => { saveViewState(); renderSnapshot(); });
     document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
     runButton.addEventListener('click', runBatch);
+    restartButton.addEventListener('click', restartServer);
     document.querySelector('#show-weights').addEventListener('click', showWeights);
     document.querySelector('#close-weights').addEventListener('click', () => document.querySelector('#weights-modal').close());
     document.querySelector('#table-body').addEventListener('click', event => {

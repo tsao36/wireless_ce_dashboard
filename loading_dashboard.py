@@ -45,6 +45,9 @@ if not HISTORY_PATH.is_absolute():
     HISTORY_PATH = ROOT / HISTORY_PATH
 WEIGHT_MAP_PATH = ROOT / "issue_category_weights.json"
 BATCH_PATH = ROOT / "run_offload_loading_summary_daily.bat"
+RESTART_SCRIPT_PATH = ROOT / "restart_dashboard.ps1"
+RESTART_COOLDOWN = timedelta(minutes=2)
+RESTART_REQUESTED_AT: datetime | None = None
 RUN_LOCK = threading.Lock()
 RUN_PROCESS: subprocess.Popen[bytes] | None = None
 RUN_STARTED_AT: str | None = None
@@ -756,6 +759,9 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/run-batch":
             self._start_batch()
             return
+        if parsed.path == "/api/restart":
+            self._restart_server()
+            return
         if parsed.path == "/api/category-review":
             self._save_category_review()
             return
@@ -858,6 +864,8 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
                 {"available": False, "message": f"Workbook unavailable: {exc}"},
                 HTTPStatus.OK,
             )
+        except ValueError as exc:
+            self._send_json({"available": False, "message": f"Workbook unavailable: {exc}"}, HTTPStatus.OK)
         except Exception as exc:
             self._send_json(
                 {"available": False, "message": f"Unable to read workbook ({type(exc).__name__})."},
@@ -937,6 +945,38 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
             RUN_FINISHED_AT = None
             RUN_RETURN_CODE = None
         self._send_json({"running": True, "started_at": RUN_STARTED_AT}, HTTPStatus.ACCEPTED)
+
+    def _restart_server(self) -> None:
+        global RESTART_REQUESTED_AT
+        if os.name != "nt" or not RESTART_SCRIPT_PATH.is_file():
+            self._send_json({"message": "Restart is only available on the Windows server."}, HTTPStatus.BAD_REQUEST)
+            return
+        with RUN_LOCK:
+            now = datetime.now()
+            if RESTART_REQUESTED_AT and now - RESTART_REQUESTED_AT < RESTART_COOLDOWN:
+                self._send_json({"message": "A restart was requested less than 2 minutes ago."}, HTTPStatus.CONFLICT)
+                return
+            # Launch via WMI so the script is not a child of this process and survives the task stop it performs.
+            inner = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "{RESTART_SCRIPT_PATH}"'
+            launcher = (
+                "$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
+                f"-Arguments @{{CommandLine='{inner.replace(chr(39), chr(39) * 2)}'}}; exit $r.ReturnValue"
+            )
+            try:
+                result = subprocess.run(
+                    ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", launcher],
+                    capture_output=True,
+                    timeout=30,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                self._send_json({"message": f"Unable to start restart ({type(exc).__name__})."}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            if result.returncode != 0:
+                self._send_json({"message": f"Unable to start restart (code {result.returncode})."}, HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            RESTART_REQUESTED_AT = now
+        self._send_json({"restarting": True}, HTTPStatus.ACCEPTED)
 
     def log_message(self, format: str, *args: object) -> None:
         print(f"[dashboard] {self.address_string()} - {format % args}")
