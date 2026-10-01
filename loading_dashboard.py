@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import json
 import os
 import re
 import subprocess
 import threading
+import urllib.error
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import psycopg2
 from openpyxl import load_workbook
@@ -31,6 +34,11 @@ if not SNAPSHOT_PATH.is_absolute():
 ACTIVITY_WORKBOOK_PATH = Path(os.environ.get("CFE_ACTIVITY_WORKBOOK_FILE", str(ROOT / "CFE work overview.xlsx")))
 if not ACTIVITY_WORKBOOK_PATH.is_absolute():
     ACTIVITY_WORKBOOK_PATH = ROOT / ACTIVITY_WORKBOOK_PATH
+ACTIVITY_WORKBOOK_USER = os.environ.get("CFE_ACTIVITY_WORKBOOK_USER", "").strip()
+ACTIVITY_WORKBOOK_PASSWORD = os.environ.get("CFE_ACTIVITY_WORKBOOK_PASSWORD", "")
+ACTIVITY_WORKBOOK_URL = os.environ.get("CFE_ACTIVITY_WORKBOOK_URL", "").strip()
+ACTIVITY_WORKBOOK_CACHE_PATH = ROOT / "cache" / "CFE work overview.xlsx"
+ACTIVITY_WORKBOOK_REFRESH_HOURS = float(os.environ.get("CFE_ACTIVITY_WORKBOOK_REFRESH_HOURS", "6"))
 CURRENT_YEAR = datetime.now().year
 HISTORY_PATH = Path(os.environ.get("OFFLOAD_LOADING_HISTORY_DIR", str(ROOT / "loading_history")))
 if not HISTORY_PATH.is_absolute():
@@ -124,11 +132,110 @@ def _activity_category(sheet_name: str, headers: tuple[object, ...]) -> str:
     return "Team reference"
 
 
-def _load_activity_workbook() -> dict:
-    if not ACTIVITY_WORKBOOK_PATH.is_file():
+def _ensure_activity_workbook() -> Path:
+    if str(ACTIVITY_WORKBOOK_PATH).startswith("\\\\"):
+        _connect_network_workbook()
+    if ACTIVITY_WORKBOOK_PATH.is_file():
+        return ACTIVITY_WORKBOOK_PATH
+    if not ACTIVITY_WORKBOOK_URL:
         raise FileNotFoundError(ACTIVITY_WORKBOOK_PATH.name)
 
-    workbook = load_workbook(ACTIVITY_WORKBOOK_PATH, data_only=True, read_only=True)
+    cache_path = ACTIVITY_WORKBOOK_CACHE_PATH
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_is_fresh = cache_path.is_file() and (
+        datetime.now().timestamp() - cache_path.stat().st_mtime < ACTIVITY_WORKBOOK_REFRESH_HOURS * 3600
+    )
+    if cache_is_fresh:
+        return cache_path
+
+    request = urllib.request.Request(
+        ACTIVITY_WORKBOOK_URL,
+        headers={"User-Agent": "Wireless-CFE-Dashboard/1.0"},
+    )
+    temp_path = cache_path.with_suffix(".tmp")
+    try:
+        try:
+            with urllib.request.urlopen(request, timeout=45) as response:
+                content = response.read(50 * 1024 * 1024 + 1)
+        except urllib.error.HTTPError:
+            content = b""
+        if not content.startswith(b"PK"):
+            content = _download_sharepoint_via_graph(ACTIVITY_WORKBOOK_URL)
+        if len(content) > 50 * 1024 * 1024:
+            raise ValueError("Workbook exceeds the 50 MB download limit.")
+        temp_path.write_bytes(content)
+        os.replace(temp_path, cache_path)
+        return cache_path
+    except (OSError, urllib.error.URLError, ValueError) as exc:
+        temp_path.unlink(missing_ok=True)
+        if cache_path.is_file():
+            return cache_path
+        raise FileNotFoundError(f"Unable to download workbook from SharePoint: {exc}") from exc
+
+
+def _connect_network_workbook() -> None:
+    if not ACTIVITY_WORKBOOK_USER or not ACTIVITY_WORKBOOK_PASSWORD:
+        return
+    match = re.match(r"^(\\\\[^\\]+\\[^\\]+)", str(ACTIVITY_WORKBOOK_PATH))
+    if not match:
+        raise ValueError("CFE_ACTIVITY_WORKBOOK_FILE is not a valid UNC path.")
+    result = subprocess.run(
+        [
+            "net",
+            "use",
+            match.group(1),
+            f"/user:{ACTIVITY_WORKBOOK_USER}",
+            ACTIVITY_WORKBOOK_PASSWORD,
+            "/persistent:no",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 and not ACTIVITY_WORKBOOK_PATH.is_file():
+        raise ValueError(f"Unable to connect to workbook share ({result.returncode}).")
+
+
+def _download_sharepoint_via_graph(share_url: str) -> bytes:
+    tenant = os.environ.get("AZURE_TENANT_ID", "").strip()
+    client_id = os.environ.get("AZURE_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("GRAPH_CLIENT_SECRET", "").strip()
+    if not all((tenant, client_id, client_secret)):
+        raise ValueError("SharePoint requires AZURE_TENANT_ID, AZURE_CLIENT_ID, and GRAPH_CLIENT_SECRET.")
+
+    token_request = urllib.request.Request(
+        f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
+        data=(
+            f"client_id={quote(client_id)}&"
+            f"client_secret={quote(client_secret)}&"
+            "scope=https%3A%2F%2Fgraph.microsoft.com%2F.default&"
+            "grant_type=client_credentials"
+        ).encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    with urllib.request.urlopen(token_request, timeout=30) as response:
+        token_payload = json.loads(response.read().decode("utf-8"))
+    access_token = token_payload.get("access_token")
+    if not access_token:
+        raise ValueError("Microsoft Graph did not return an access token.")
+
+    share_id = "u!" + base64.urlsafe_b64encode(share_url.encode("utf-8")).decode("ascii").rstrip("=")
+    content_request = urllib.request.Request(
+        f"https://graph.microsoft.com/v1.0/shares/{share_id}/driveItem/content",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    with urllib.request.urlopen(content_request, timeout=60) as response:
+        content = response.read(50 * 1024 * 1024 + 1)
+    if not content.startswith(b"PK"):
+        raise ValueError("Microsoft Graph returned a non-Excel response.")
+    return content
+
+
+def _load_activity_workbook() -> dict:
+    workbook_path = _ensure_activity_workbook()
+
+    workbook = load_workbook(workbook_path, data_only=True, read_only=True)
     sheets = []
     try:
         for worksheet in workbook.worksheets:
@@ -191,11 +298,11 @@ def _load_activity_workbook() -> dict:
     finally:
         workbook.close()
 
-    stat = ACTIVITY_WORKBOOK_PATH.stat()
+    stat = workbook_path.stat()
     return {
         "available": True,
         "year": CURRENT_YEAR,
-        "source": ACTIVITY_WORKBOOK_PATH.name,
+        "source": workbook_path.name,
         "source_updated_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         "loaded_at": datetime.now().isoformat(timespec="seconds"),
         "sheets": sheets,
@@ -611,7 +718,7 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         requested_path = Path(self.translate_path(self.path)).resolve()
         # Never serve dotfiles such as .env (DB credentials) or .venv.
-        if requested_path == ACTIVITY_WORKBOOK_PATH.resolve() or any(
+        if requested_path in {ACTIVITY_WORKBOOK_PATH.resolve(), ACTIVITY_WORKBOOK_CACHE_PATH.resolve()} or any(
             part.startswith(".") for part in unquote(parsed.path).split("/")
         ):
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -746,9 +853,9 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
     def _send_activity(self) -> None:
         try:
             self._send_json(_load_activity_workbook())
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             self._send_json(
-                {"available": False, "message": f"Workbook not found: {ACTIVITY_WORKBOOK_PATH.name}"},
+                {"available": False, "message": f"Workbook unavailable: {exc}"},
                 HTTPStatus.NOT_FOUND,
             )
         except Exception as exc:
