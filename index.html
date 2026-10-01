@@ -238,13 +238,13 @@
             select.value = nextName || '';
             renderActivitySheet();
           }
-          async function loadActivity() {
+          async function loadActivity(force = false) {
             if (activityLoading) return;
             activityLoading = true;
             const button = document.querySelector('#activity-refresh'); const status = document.querySelector('#activity-status');
             button.disabled = true; button.textContent = 'Refreshing...'; status.classList.remove('error'); status.textContent = 'Reading workbook...';
             try {
-              const response = await fetch(`${API_BASE}/api/activity`, { cache: 'no-store' });
+              const response = await fetch(`${API_BASE}/api/activity${force ? '?refresh=1' : ''}`, { cache: 'no-store' });
               const responseText = await response.text();
               let result;
               try { result = JSON.parse(responseText); } catch (parseError) { throw new Error(`Server returned HTTP ${response.status} instead of JSON.`); }
@@ -394,7 +394,7 @@
         document.querySelector('#activity-category').addEventListener('change', () => updateActivitySheets());
         document.querySelector('#activity-sheet').addEventListener('change', renderActivitySheet);
         document.querySelector('#activity-search').addEventListener('input', renderActivitySheet);
-        document.querySelector('#activity-refresh').addEventListener('click', loadActivity);
+        document.querySelector('#activity-refresh').addEventListener('click', () => loadActivity(true));
         const dashboardTabs = [...document.querySelectorAll('.view-tab')];
         dashboardTabs.forEach((tab, index) => {
           tab.addEventListener('click', () => selectDashboardView(tab.id === 'activity-tab' ? 'activity' : 'loading'));

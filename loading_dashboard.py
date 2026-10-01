@@ -37,8 +37,18 @@ if not ACTIVITY_WORKBOOK_PATH.is_absolute():
 ACTIVITY_WORKBOOK_USER = os.environ.get("CFE_ACTIVITY_WORKBOOK_USER", "").strip()
 ACTIVITY_WORKBOOK_PASSWORD = os.environ.get("CFE_ACTIVITY_WORKBOOK_PASSWORD", "")
 ACTIVITY_WORKBOOK_URL = os.environ.get("CFE_ACTIVITY_WORKBOOK_URL", "").strip()
+ACTIVITY_CACHE: dict = {"key": None, "payload": None, "checked_at": 0.0}
+ACTIVITY_LOCK = threading.Lock()
+# Checking the workbook on the network share costs ~1s, so only look for changes this often.
+ACTIVITY_CHECK_SECONDS = 60
 ACTIVITY_WORKBOOK_CACHE_PATH = ROOT / "cache" / "CFE work overview.xlsx"
 ACTIVITY_WORKBOOK_REFRESH_HOURS = float(os.environ.get("CFE_ACTIVITY_WORKBOOK_REFRESH_HOURS", "6"))
+# Only local copies can be served by the static handler; resolving a UNC path is a slow network call.
+BLOCKED_STATIC_PATHS = {
+    path.resolve()
+    for path in (ACTIVITY_WORKBOOK_PATH, ACTIVITY_WORKBOOK_CACHE_PATH)
+    if not str(path).startswith("\\\\")
+}
 CURRENT_YEAR = datetime.now().year
 HISTORY_PATH = Path(os.environ.get("OFFLOAD_LOADING_HISTORY_DIR", str(ROOT / "loading_history")))
 if not HISTORY_PATH.is_absolute():
@@ -136,6 +146,8 @@ def _activity_category(sheet_name: str, headers: tuple[object, ...]) -> str:
 
 
 def _ensure_activity_workbook() -> Path:
+    if ACTIVITY_WORKBOOK_PATH.is_file():
+        return ACTIVITY_WORKBOOK_PATH
     if str(ACTIVITY_WORKBOOK_PATH).startswith("\\\\"):
         _connect_network_workbook()
     if ACTIVITY_WORKBOOK_PATH.is_file():
@@ -235,8 +247,19 @@ def _download_sharepoint_via_graph(share_url: str) -> bytes:
     return content
 
 
-def _load_activity_workbook() -> dict:
+def _load_activity_workbook(force: bool = False) -> dict:
+    now = datetime.now().timestamp()
+    with ACTIVITY_LOCK:
+        if not force and ACTIVITY_CACHE["payload"] and now - ACTIVITY_CACHE["checked_at"] < ACTIVITY_CHECK_SECONDS:
+            return ACTIVITY_CACHE["payload"]
     workbook_path = _ensure_activity_workbook()
+    stat = workbook_path.stat()
+    # Re-parse only when the workbook file actually changes; parsing takes seconds.
+    cache_key = (str(workbook_path), stat.st_mtime, stat.st_size)
+    with ACTIVITY_LOCK:
+        if not force and ACTIVITY_CACHE["key"] == cache_key:
+            ACTIVITY_CACHE["checked_at"] = now
+            return ACTIVITY_CACHE["payload"]
 
     workbook = load_workbook(workbook_path, data_only=True, read_only=True)
     sheets = []
@@ -301,8 +324,7 @@ def _load_activity_workbook() -> dict:
     finally:
         workbook.close()
 
-    stat = workbook_path.stat()
-    return {
+    payload = {
         "available": True,
         "year": CURRENT_YEAR,
         "source": workbook_path.name,
@@ -310,6 +332,9 @@ def _load_activity_workbook() -> dict:
         "loaded_at": datetime.now().isoformat(timespec="seconds"),
         "sheets": sheets,
     }
+    with ACTIVITY_LOCK:
+        ACTIVITY_CACHE.update(key=cache_key, payload=payload, checked_at=now)
+    return payload
 
 
 def _field_issue_text(value: object) -> str:
@@ -721,13 +746,13 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         requested_path = Path(self.translate_path(self.path)).resolve()
         # Never serve dotfiles such as .env (DB credentials) or .venv.
-        if requested_path in {ACTIVITY_WORKBOOK_PATH.resolve(), ACTIVITY_WORKBOOK_CACHE_PATH.resolve()} or any(
+        if requested_path in BLOCKED_STATIC_PATHS or any(
             part.startswith(".") for part in unquote(parsed.path).split("/")
         ):
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         if parsed.path == "/api/activity":
-            self._send_activity()
+            self._send_activity(parse_qs(parsed.query).get("refresh", ["0"])[0] == "1")
             return
         if parsed.path == "/api/field-issues":
             self._send_field_issues()
@@ -856,9 +881,9 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
 
         self._send_json(payload)
 
-    def _send_activity(self) -> None:
+    def _send_activity(self, force: bool = False) -> None:
         try:
-            self._send_json(_load_activity_workbook())
+            self._send_json(_load_activity_workbook(force))
         except FileNotFoundError as exc:
             self._send_json(
                 {"available": False, "message": f"Workbook unavailable: {exc}"},
