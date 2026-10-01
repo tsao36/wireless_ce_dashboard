@@ -37,7 +37,7 @@ if not ACTIVITY_WORKBOOK_PATH.is_absolute():
 ACTIVITY_WORKBOOK_USER = os.environ.get("CFE_ACTIVITY_WORKBOOK_USER", "").strip()
 ACTIVITY_WORKBOOK_PASSWORD = os.environ.get("CFE_ACTIVITY_WORKBOOK_PASSWORD", "")
 ACTIVITY_WORKBOOK_URL = os.environ.get("CFE_ACTIVITY_WORKBOOK_URL", "").strip()
-ACTIVITY_CACHE: dict = {"key": None, "payload": None, "checked_at": 0.0}
+ACTIVITY_CACHE: dict = {"key": None, "payload": None, "checked_at": 0.0, "refreshing": False}
 ACTIVITY_LOCK = threading.Lock()
 # Checking the workbook on the network share costs ~1s, so only look for changes this often.
 ACTIVITY_CHECK_SECONDS = 60
@@ -110,6 +110,10 @@ CATEGORY_REVIEW_COLUMNS = (
 )
 CATEGORY_LOCK = threading.Lock()
 CATEGORY_CACHE: dict = {"model_mtime": None, "bundle": None, "predictions": {}, "queue": {}, "reviewers": set()}
+CATEGORY_QUEUE_STATE: dict = {"loaded_at": 0.0, "refreshing": False}
+CATEGORY_QUEUE_LOCK = threading.Lock()
+# The issue query takes ~3s; serve the last result and refresh it in the background after this many seconds.
+CATEGORY_QUEUE_MAX_AGE = 300
 LLM_CACHE_PATH = ROOT / "cache" / "category_llm_predictions.json"
 LLM_LOCK = threading.Lock()
 LLM_STATE: dict = {"running": False, "done": 0, "total": 0, "failed": 0, "predictions": None, "error": "", "failed_at": None}
@@ -247,10 +251,24 @@ def _download_sharepoint_via_graph(share_url: str) -> bytes:
     return content
 
 
-def _load_activity_workbook(force: bool = False) -> dict:
+def _refresh_activity_workbook() -> None:
+    try:
+        _load_activity_workbook(background=True)
+    except Exception as exc:
+        print(f"[dashboard] Activity workbook refresh failed ({type(exc).__name__}); keeping previous data.")
+    finally:
+        with ACTIVITY_LOCK:
+            ACTIVITY_CACHE["checked_at"] = datetime.now().timestamp()
+            ACTIVITY_CACHE["refreshing"] = False
+
+
+def _load_activity_workbook(force: bool = False, background: bool = False) -> dict:
     now = datetime.now().timestamp()
     with ACTIVITY_LOCK:
-        if not force and ACTIVITY_CACHE["payload"] and now - ACTIVITY_CACHE["checked_at"] < ACTIVITY_CHECK_SECONDS:
+        if not force and not background and ACTIVITY_CACHE["payload"]:
+            if now - ACTIVITY_CACHE["checked_at"] >= ACTIVITY_CHECK_SECONDS and not ACTIVITY_CACHE["refreshing"]:
+                ACTIVITY_CACHE["refreshing"] = True
+                threading.Thread(target=_refresh_activity_workbook, daemon=True).start()
             return ACTIVITY_CACHE["payload"]
     workbook_path = _ensure_activity_workbook()
     stat = workbook_path.stat()
@@ -565,7 +583,28 @@ def _load_category_queue() -> dict[str, dict]:
         }
     CATEGORY_CACHE["queue"] = queue
     CATEGORY_CACHE["reviewers"] = reviewers
+    CATEGORY_QUEUE_STATE["loaded_at"] = datetime.now().timestamp()
     return queue
+
+
+def _refresh_category_queue() -> None:
+    try:
+        _load_category_queue()
+    except Exception as exc:
+        print(f"[dashboard] Category queue refresh failed ({type(exc).__name__}); keeping previous data.")
+    finally:
+        CATEGORY_QUEUE_STATE["refreshing"] = False
+
+
+def _cached_category_queue() -> dict[str, dict]:
+    if not CATEGORY_QUEUE_STATE["loaded_at"]:
+        return _load_category_queue()
+    if datetime.now().timestamp() - CATEGORY_QUEUE_STATE["loaded_at"] > CATEGORY_QUEUE_MAX_AGE:
+        with CATEGORY_QUEUE_LOCK:
+            if not CATEGORY_QUEUE_STATE["refreshing"]:
+                CATEGORY_QUEUE_STATE["refreshing"] = True
+                threading.Thread(target=_refresh_category_queue, daemon=True).start()
+    return CATEGORY_CACHE["queue"]
 
 
 def _llm_predictions() -> dict[str, dict]:
@@ -669,7 +708,7 @@ def _llm_payload() -> dict:
 
 
 def _load_category_prediction() -> dict:
-    queue = _load_category_queue()
+    queue = _cached_category_queue()
     _start_llm_backfill(queue)
     reviews = _read_category_reviews()
     issues = []
@@ -1007,6 +1046,16 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         print(f"[dashboard] {self.address_string()} - {format % args}")
 
 
+def _warm_caches() -> None:
+    """Pre-load the slow data at startup so the first visitor does not wait for it."""
+    for name, loader in (("activity workbook", _load_activity_workbook), ("category queue", _cached_category_queue)):
+        try:
+            loader()
+            print(f"[dashboard] Warmed {name} cache.")
+        except Exception as exc:
+            print(f"[dashboard] Could not warm {name} cache ({type(exc).__name__}).")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Serve the weighted team loading dashboard.")
     parser.add_argument("--host", default="127.0.0.1")
@@ -1014,6 +1063,7 @@ def main() -> None:
     args = parser.parse_args()
     server = ThreadingHTTPServer((args.host, args.port), LoadingDashboardHandler)
     print(f"Loading dashboard: http://{args.host}:{args.port}/")
+    threading.Thread(target=_warm_caches, daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
