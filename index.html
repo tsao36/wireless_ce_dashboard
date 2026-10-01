@@ -153,10 +153,10 @@
   <main>
     <header class="masthead"><div><h1>Wireless CE Team Dashboard</h1><p class="subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button></div></header>
     <div class="view-switch" role="tablist" aria-label="Dashboard views">
-      <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="true" aria-controls="activity-view">Team activity</button>
-      <button class="view-tab" id="loading-tab" type="button" role="tab" aria-selected="false" aria-controls="loading-view" tabindex="-1">Team loading</button>
+      <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="false" aria-controls="activity-view" tabindex="-1">Team activity</button>
+      <button class="view-tab" id="loading-tab" type="button" role="tab" aria-selected="true" aria-controls="loading-view">Team loading</button>
     </div>
-    <section class="panel activity-panel" id="activity-view" role="tabpanel" aria-labelledby="activity-tab">
+    <section class="panel activity-panel" id="activity-view" role="tabpanel" aria-labelledby="activity-tab" hidden>
       <div class="panel-head"><h2>Team activity</h2><span id="activity-record-count">Loading workbook...</span></div>
       <div class="toolbar activity-toolbar">
         <label>Area <select id="activity-category"><option value="">All areas</option></select></label>
@@ -168,7 +168,7 @@
       <div class="table-wrap activity-table-wrap" id="activity-table-wrap"><table class="activity-table"><thead id="activity-table-head"></thead><tbody id="activity-table-body"></tbody></table></div>
       <div class="activity-empty" id="activity-empty" hidden></div>
     </section>
-    <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab" hidden>
+    <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab">
     <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
     <section class="panel"><div class="panel-head"><h2>Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
       <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
