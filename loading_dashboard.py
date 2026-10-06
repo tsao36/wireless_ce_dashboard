@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import hashlib
+import html
 import json
 import os
 import re
@@ -18,6 +20,7 @@ from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
+from xml.etree import ElementTree as ET
 
 import psycopg2
 from openpyxl import load_workbook
@@ -26,6 +29,11 @@ from psycopg2 import sql
 
 from APIs import Sherlock
 import issue_category_model as category_model
+
+try:
+    import snowflake.connector as snowflake_connector
+except Exception:
+    snowflake_connector = None
 
 ROOT = Path(__file__).resolve().parent
 SNAPSHOT_PATH = Path(os.environ.get("OFFLOAD_LOADING_SNAPSHOT_FILE", "team_loading_latest.json"))
@@ -99,24 +107,45 @@ CATEGORY_REVIEW_PATH = Path(
 )
 CATEGORY_REVIEW_COLUMNS = (
     "ips_title",
+    "ips_description",
     "predicted_category",
     "technology",
     "human_category",
     "ips_case_number",
     "verdict",
     "llm_category",
+    "llm2_category",
     "reviewer",
     "reviewed_at",
 )
 CATEGORY_LOCK = threading.Lock()
-CATEGORY_CACHE: dict = {"model_mtime": None, "bundle": None, "predictions": {}, "queue": {}, "reviewers": set()}
+CATEGORY_CACHE: dict = {
+    "model_mtime": None,
+    "bundle": None,
+    "predictions": {},
+    "queue": {},
+    "reviewers": set(),
+    # case number -> IPS description + environment details text; kept out of the queue so the page payload stays small.
+    "details": {},
+}
+IPS_DETAIL_MAX_CHARS = 3000
+# The current ML model was trained on titles; details skew it toward Connectivity until it is retrained with them.
+CATEGORY_ML_USE_DETAILS = os.environ.get("CATEGORY_ML_USE_DETAILS", "0").strip().lower() in ("1", "true", "yes")
+IPS_PROXY_LOCK = threading.Lock()
 CATEGORY_QUEUE_STATE: dict = {"loaded_at": 0.0, "refreshing": False}
 CATEGORY_QUEUE_LOCK = threading.Lock()
 # The issue query takes ~3s; serve the last result and refresh it in the background after this many seconds.
 CATEGORY_QUEUE_MAX_AGE = 300
 LLM_CACHE_PATH = ROOT / "cache" / "category_llm_predictions.json"
+GOLDEN_BENCHMARK_PATH = ROOT / "cache" / "category_golden_benchmark.json"
+LLM_COMPARE_MODEL = os.environ.get("GNAI_COMPARE_MODEL", "gpt-5.6-luna").strip()
 LLM_LOCK = threading.Lock()
-LLM_STATE: dict = {"running": False, "done": 0, "total": 0, "failed": 0, "predictions": None, "error": "", "failed_at": None}
+# "llm" uses GNAI_MODEL; "llm2" uses GNAI_COMPARE_MODEL so the page can compare two LLMs.
+LLM_SLOTS: dict[str, dict] = {
+    slot: {"running": False, "done": 0, "total": 0, "failed": 0, "predictions": None, "error": "", "failed_at": None, "cache_path": path}
+    for slot, path in (("llm", LLM_CACHE_PATH), ("llm2", ROOT / "cache" / "category_llm2_predictions.json"))
+}
+REVIEW_SUMMARY_KEYS = ("human_category", "verdict", "llm_category", "llm2_category", "reviewer", "reviewed_at")
 LLM_RETRY_AFTER = timedelta(minutes=30)
 LLM_MAX_CONSECUTIVE_FAILURES = 8
 
@@ -511,6 +540,104 @@ def _category_technology_expr(available: set[str]) -> str:
     )
 
 
+def _strip_html(value: object) -> str:
+    text = re.sub(r"<br\s*/?>|</p>|</div>|</li>", "\n", str(value or ""), flags=re.IGNORECASE)
+    text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+    return re.sub(r"[ \t\r\f\v\xa0]+", " ", re.sub(r"\n\s*\n+", "\n", text)).strip()
+
+
+def _env_details_text(raw: object) -> str:
+    raw_text = str(raw or "").strip()
+    if not raw_text:
+        return ""
+    try:
+        table = ET.XML(raw_text.replace("<b>", "").replace("</b>", ""))
+    except ET.ParseError:
+        return _strip_html(raw_text)
+    lines = []
+    for row in table:
+        cells = ["".join(cell.itertext()).strip() for cell in row]
+        if len(cells) >= 2 and cells[0] and cells[1] and cells[1].upper() != "NA" and cells[0] != "Question":
+            lines.append(f"{cells[0]}: {cells[1]}")
+    return "\n".join(lines)
+
+
+def _ips_detail_text(description: object, env_details: object) -> str:
+    parts = [_strip_html(description), _env_details_text(env_details)]
+    return "\n".join(part for part in parts if part)[:IPS_DETAIL_MAX_CHARS]
+
+
+def _ips_case_query(where: str, values: list, chunk_size: int = 500) -> list[tuple]:
+    """(CASE_NBR, SUBJECT_TXT, CASE_CREATED_DTM, description, env details) rows; `where` has one `{in}` slot bound per chunk."""
+    account = os.getenv("SNOWFLAKE_IPS_ACCOUNT", "").strip()
+    database = os.getenv("SNOWFLAKE_IPS_DATABASE", "").strip()
+    if snowflake_connector is None or not account or not database:
+        raise RuntimeError("Snowflake connector or SNOWFLAKE_IPS_* settings are missing.")
+    proxies = {
+        "HTTP_PROXY": os.getenv("IPS_HTTP_PROXY", "").strip(),
+        "HTTPS_PROXY": os.getenv("IPS_HTTPS_PROXY", "").strip(),
+        "NO_PROXY": os.getenv("IPS_NO_PROXY", "").strip() or f"{account}.snowflakecomputing.com",
+    }
+    table = f"{database}.sales_support_premier_analysis.fact_case"
+    rows: list[tuple] = []
+    # Snowflake needs the corporate proxy only for this query; restore the env so other requests are unaffected.
+    with IPS_PROXY_LOCK:
+        saved = {name: os.environ.get(name) for name in proxies}
+        os.environ.update({name: value for name, value in proxies.items() if value})
+        try:
+            connection = snowflake_connector.connect(
+                user=os.getenv("SNOWFLAKE_IPS_USER", "").strip(),
+                password=os.getenv("SNOWFLAKE_IPS_PASSWORD", "").strip(),
+                role=os.getenv("SNOWFLAKE_IPS_ROLE", "").strip(),
+                account=account,
+                warehouse=os.getenv("SNOWFLAKE_IPS_WAREHOUSE", "").strip(),
+                database=database,
+                login_timeout=30,
+            )
+            try:
+                with connection.cursor() as cursor:
+                    for start in range(0, len(values), chunk_size):
+                        chunk = values[start : start + chunk_size]
+                        cursor.execute(
+                            "SELECT CASE_NBR, SUBJECT_TXT, CASE_CREATED_DTM, ISS_CASE_DESCRIPTION_DSC, ENV_DETAIL_DSC "
+                            f"FROM {table} WHERE " + where.format(**{"in": ", ".join(["%s"] * len(chunk))}),
+                            chunk,
+                        )
+                        rows.extend(cursor.fetchall())
+            finally:
+                connection.close()
+        finally:
+            for name, value in saved.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+    return rows
+
+
+def _fetch_ips_details(case_numbers: list[str]) -> dict[str, str]:
+    """Description + environment details per IPS case from Snowflake; empty when Snowflake is unavailable."""
+    if not case_numbers:
+        return {}
+    by_number = {int(number): number for number in case_numbers}
+    try:
+        rows = _ips_case_query("CASE_NBR IN ({in})", list(by_number))
+    except Exception as exc:
+        print(f"[dashboard] IPS details fetch failed ({type(exc).__name__}); predicting from titles only.")
+        return {}
+    details: dict[str, str] = {}
+    for case_number, _subject, _created, description, env_details in rows:
+        # Snowflake CASE_NBR is zero-padded ("00984509"); key by the queue's form.
+        key = by_number.get(int(case_number))
+        if key:
+            details[key] = _ips_detail_text(description, env_details)
+    return details
+
+
+def _detail_hash(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16] if text else ""
+
+
 def _load_category_queue() -> dict[str, dict]:
     model_mtime = CATEGORY_MODEL_PATH.stat().st_mtime
     if CATEGORY_CACHE["model_mtime"] != model_mtime:
@@ -557,6 +684,14 @@ def _load_category_queue() -> dict[str, dict]:
     finally:
         connection.close()
 
+    details = CATEGORY_CACHE["details"]
+    missing = [
+        case_number
+        for case_number, *_, technology in rows
+        if case_number not in details and _field_issue_text(technology).lower() != "software"
+    ]
+    details.update(_fetch_ips_details(missing))
+
     queue: dict[str, dict] = {}
     for case_number, title, url, status, engineer, created, technology in rows:
         technology = _field_issue_text(technology)
@@ -564,10 +699,11 @@ def _load_category_queue() -> dict[str, dict]:
         if technology.lower() == "software":
             continue
         title = _field_issue_text(title)
-        key = (case_number, title, technology)
+        description = details.get(case_number, "") if CATEGORY_ML_USE_DETAILS else ""
+        key = (case_number, title, technology, description)
         if key not in CATEGORY_CACHE["predictions"]:
             CATEGORY_CACHE["predictions"][key] = category_model.classify_issue_title(
-                CATEGORY_CACHE["bundle"], title, technology=technology, use_llm=False
+                CATEGORY_CACHE["bundle"], title, technology=technology, description=description, use_llm=False
             )
         predicted, confidence = CATEGORY_CACHE["predictions"][key]
         queue[case_number] = {
@@ -607,45 +743,62 @@ def _cached_category_queue() -> dict[str, dict]:
     return CATEGORY_CACHE["queue"]
 
 
-def _llm_predictions() -> dict[str, dict]:
-    with LLM_LOCK:
-        if LLM_STATE["predictions"] is None:
-            LLM_STATE["predictions"] = _read_json(LLM_CACHE_PATH)
-        return LLM_STATE["predictions"]
+def _slot_model(slot: str) -> str:
+    primary = category_model.llm_model_name()
+    if slot == "llm":
+        return primary
+    return LLM_COMPARE_MODEL if primary and LLM_COMPARE_MODEL != primary else ""
 
 
-def _save_llm_predictions() -> None:
+def _llm_predictions(slot: str) -> dict[str, dict]:
+    state = LLM_SLOTS[slot]
     with LLM_LOCK:
-        snapshot = json.dumps(LLM_STATE["predictions"] or {}, ensure_ascii=False)
-    LLM_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = LLM_CACHE_PATH.with_suffix(".tmp")
+        if state["predictions"] is None:
+            state["predictions"] = _read_json(state["cache_path"])
+        return state["predictions"]
+
+
+def _save_llm_predictions(slot: str) -> None:
+    state = LLM_SLOTS[slot]
+    with LLM_LOCK:
+        snapshot = json.dumps(state["predictions"] or {}, ensure_ascii=False)
+    cache_path = state["cache_path"]
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = cache_path.with_suffix(".tmp")
     temp_path.write_text(snapshot, encoding="utf-8")
-    os.replace(temp_path, LLM_CACHE_PATH)
+    os.replace(temp_path, cache_path)
 
 
-def _llm_prediction_for(issue: dict) -> dict | None:
-    cached = _llm_predictions().get(issue["ips_case_number"])
-    # A title/technology edit or a different LLM model invalidates the cached answer.
+def _llm_prediction_for(issue: dict, slot: str = "llm") -> dict | None:
+    cached = _llm_predictions(slot).get(issue["ips_case_number"])
+    # A title/technology/details edit or a different LLM model invalidates the cached answer.
     if not cached or cached.get("title") != issue["ips_title"] or cached.get("technology") != issue["technology"]:
         return None
-    return cached if cached.get("llm_model") == category_model.llm_model_name() else None
+    if cached.get("details_hash", "") != _detail_hash(CATEGORY_CACHE["details"].get(issue["ips_case_number"], "")):
+        return None
+    return cached if cached.get("llm_model") == _slot_model(slot) else None
 
 
-def _run_llm_backfill(missing: list[dict], llm_model: str) -> None:
+def _run_llm_backfill(slot: str, missing: list[dict], llm_model: str) -> None:
     bundle = CATEGORY_CACHE["bundle"]
+    state = LLM_SLOTS[slot]
 
     def predict(issue: dict) -> tuple[dict, tuple[str, float] | None]:
-        return issue, category_model.classify_issue_title_llm(bundle, issue["ips_title"], technology=issue["technology"])
+        description = CATEGORY_CACHE["details"].get(issue["ips_case_number"], "")
+        return issue, category_model.classify_issue_title_llm(
+            bundle, issue["ips_title"], technology=issue["technology"], description=description, model=llm_model
+        )
 
     def record(issue: dict, result: tuple[str, float] | None) -> None:
         with LLM_LOCK:
-            LLM_STATE["done"] += 1
+            state["done"] += 1
             if result is None:
-                LLM_STATE["failed"] += 1
+                state["failed"] += 1
                 return
-            LLM_STATE["predictions"][issue["ips_case_number"]] = {
+            state["predictions"][issue["ips_case_number"]] = {
                 "title": issue["ips_title"],
                 "technology": issue["technology"],
+                "details_hash": _detail_hash(CATEGORY_CACHE["details"].get(issue["ips_case_number"], "")),
                 "category": result[0],
                 "confidence": round(float(result[1]), 4),
                 "llm_model": llm_model,
@@ -665,46 +818,51 @@ def _run_llm_backfill(missing: list[dict], llm_model: str) -> None:
                     error = "LLM requests keep failing (for example HTTP 401/403). Check that GNAI_TOKEN in .env is valid and not expired, then restart the server."
                     break
                 # Persist every batch so a crash or restart never re-spends tokens on finished issues.
-                _save_llm_predictions()
+                _save_llm_predictions(slot)
     finally:
-        _save_llm_predictions()
+        _save_llm_predictions(slot)
         with LLM_LOCK:
-            LLM_STATE.update(running=False, error=error, failed_at=datetime.now() if error else None)
+            state.update(running=False, error=error, failed_at=datetime.now() if error else None)
 
 
 def _start_llm_backfill(queue: dict[str, dict]) -> None:
-    llm_model = category_model.llm_model_name()
-    if not llm_model:
-        return
-    missing = [issue for issue in queue.values() if _llm_prediction_for(issue) is None]
-    with LLM_LOCK:
-        if LLM_STATE["running"] or not missing:
-            return
-        if LLM_STATE["failed_at"] and datetime.now() - LLM_STATE["failed_at"] < LLM_RETRY_AFTER:
-            return
-        LLM_STATE.update(running=True, done=0, total=len(missing), failed=0, error="")
-    threading.Thread(target=_run_llm_backfill, args=(missing, llm_model), daemon=True).start()
+    for slot, state in LLM_SLOTS.items():
+        llm_model = _slot_model(slot)
+        if not llm_model:
+            continue
+        missing = [issue for issue in queue.values() if _llm_prediction_for(issue, slot) is None]
+        with LLM_LOCK:
+            if state["running"] or not missing:
+                continue
+            if state["failed_at"] and datetime.now() - state["failed_at"] < LLM_RETRY_AFTER:
+                continue
+            state.update(running=True, done=0, total=len(missing), failed=0, error="")
+        threading.Thread(target=_run_llm_backfill, args=(slot, missing, llm_model), daemon=True).start()
 
 
-def _llm_status() -> dict:
+def _llm_status(slot: str = "llm") -> dict:
+    state = LLM_SLOTS[slot]
     with LLM_LOCK:
         return {
-            "model": category_model.llm_model_name(),
-            "running": LLM_STATE["running"],
-            "done": LLM_STATE["done"],
-            "total": LLM_STATE["total"],
-            "failed": LLM_STATE["failed"],
-            "error": LLM_STATE["error"],
+            "model": _slot_model(slot),
+            "running": state["running"],
+            "done": state["done"],
+            "total": state["total"],
+            "failed": state["failed"],
+            "error": state["error"],
         }
 
 
 def _llm_payload() -> dict:
-    predictions = {}
-    for case_number, issue in CATEGORY_CACHE["queue"].items():
-        cached = _llm_prediction_for(issue)
-        if cached:
-            predictions[case_number] = {"category": cached["category"], "confidence": cached["confidence"]}
-    return {"llm": _llm_status(), "predictions": predictions}
+    payload: dict = {}
+    for slot in LLM_SLOTS:
+        predictions = {}
+        for case_number, issue in CATEGORY_CACHE["queue"].items():
+            cached = _llm_prediction_for(issue, slot)
+            if cached:
+                predictions[case_number] = {"category": cached["category"], "confidence": cached["confidence"]}
+        payload[slot] = {"status": _llm_status(slot), "predictions": predictions}
+    return payload
 
 
 def _load_category_prediction() -> dict:
@@ -714,25 +872,17 @@ def _load_category_prediction() -> dict:
     issues = []
     for case_number, issue in queue.items():
         review = reviews.get(case_number)
-        llm = _llm_prediction_for(issue)
-        issues.append(
-            {
-                **issue,
-                "llm_category": llm["category"] if llm else None,
-                "llm_confidence": llm["confidence"] if llm else None,
-                "review": {
-                    key: review.get(key, "")
-                    for key in ("human_category", "verdict", "llm_category", "reviewer", "reviewed_at")
-                }
-                if review
-                else None,
-            }
-        )
+        row = {**issue, "review": {key: review.get(key, "") for key in REVIEW_SUMMARY_KEYS} if review else None}
+        for slot in LLM_SLOTS:
+            llm = _llm_prediction_for(issue, slot)
+            row[f"{slot}_category"] = llm["category"] if llm else None
+            row[f"{slot}_confidence"] = llm["confidence"] if llm else None
+        issues.append(row)
     return {
         "year": CURRENT_YEAR,
         "loaded_at": datetime.now().isoformat(timespec="seconds"),
         "model": _category_model_status(),
-        "llm": _llm_status(),
+        **{slot: _llm_status(slot) for slot in LLM_SLOTS},
         "categories": _category_labels(),
         "reviewers": sorted(CATEGORY_CACHE["reviewers"], key=str.casefold),
         "review_file": CATEGORY_REVIEW_PATH.name,
@@ -761,14 +911,18 @@ def _save_category_review(payload: dict) -> dict:
             _write_category_reviews(reviews)
             return {"ips_case_number": case_number, "review": None}
         llm = _llm_prediction_for(issue)
+        llm2 = _llm_prediction_for(issue, "llm2")
         review = {
             "ips_title": issue["ips_title"],
+            # Saved so the weekly retrain learns from the same description/environment text the model predicts on.
+            "ips_description": CATEGORY_CACHE["details"].get(case_number, ""),
             "predicted_category": issue["predicted_category"],
             "technology": issue["technology"],
             "human_category": human_category,
             "ips_case_number": case_number,
             "verdict": "correct" if human_category == issue["predicted_category"] else "corrected",
             "llm_category": llm["category"] if llm else "",
+            "llm2_category": llm2["category"] if llm2 else "",
             "reviewer": reviewer,
             "reviewed_at": datetime.now().isoformat(timespec="seconds"),
         }
@@ -776,7 +930,7 @@ def _save_category_review(payload: dict) -> dict:
         _write_category_reviews(reviews)
     return {
         "ips_case_number": case_number,
-        "review": {key: review[key] for key in ("human_category", "verdict", "llm_category", "reviewer", "reviewed_at")},
+        "review": {key: review[key] for key in REVIEW_SUMMARY_KEYS},
     }
 
 
@@ -814,6 +968,20 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/batch":
             self._send_batch_status()
             return
+        if parsed.path == "/api/category-golden":
+            payload = _read_json(GOLDEN_BENCHMARK_PATH)
+            if payload:
+                from category_golden_benchmark import REVIEW_PATH, read_golden_reviews
+                reviews = read_golden_reviews()
+                for issue in payload["issues"]:
+                    row = reviews.get(str(issue.get("row_id")), {})
+                    issue.update({key: row.get(key, "") for key in ("selected_category", "reviewer", "reviewed_at")})
+                payload["review_file"] = REVIEW_PATH.name
+                payload["categories"] = _category_labels()
+                self._send_json(payload)
+            else:
+                self._send_json({"message": "No golden-set result yet. Run category_golden_benchmark.py."}, HTTPStatus.NOT_FOUND)
+            return
         if parsed.path in ("", "/"):
             self.path = "/index.html"
         super().do_GET()
@@ -828,6 +996,9 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/category-review":
             self._save_category_review()
+            return
+        if parsed.path == "/api/category-golden-review":
+            self._save_golden_review()
             return
         self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -973,6 +1144,29 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
             self._send_json({"message": str(exc)}, HTTPStatus.BAD_REQUEST)
         except Exception as exc:
             self._send_json({"message": f"Unable to save review ({type(exc).__name__})."}, HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _save_golden_review(self) -> None:
+        length = int(self.headers.get("Content-Length") or 0)
+        if not 0 < length <= 4096:
+            self._send_json({"message": "Invalid request body."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("Invalid request body.")
+            result = _read_json(GOLDEN_BENCHMARK_PATH)
+            if not result:
+                raise ValueError("Golden benchmark is unavailable. Refresh it before reviewing.")
+            from category_golden_benchmark import save_golden_review
+            review = save_golden_review(
+                result, payload.get("row_id"), payload.get("selected_category"),
+                payload.get("reviewer"), set(_category_labels()),
+            )
+            self._send_json({"row_id": payload.get("row_id"), "review": review})
+        except ValueError as exc:
+            self._send_json({"message": str(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self._send_json({"message": f"Unable to save golden review ({type(exc).__name__})."}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _send_batch_status(self) -> None:
         global RUN_FINISHED_AT, RUN_RETURN_CODE

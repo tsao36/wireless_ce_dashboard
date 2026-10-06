@@ -6,6 +6,7 @@ import re
 import logging
 import urllib.request
 import urllib.error
+import urllib.parse
 from typing import Any, Dict, Iterable, List, Tuple
 
 try:
@@ -42,6 +43,12 @@ else:
 _PREDICT_BACKEND = (os.getenv("ISSUE_CATEGORY_PREDICT_BACKEND") or "ml").strip().lower()
 _LLM_TIMEOUT_SECONDS = float((os.getenv("ISSUE_CATEGORY_LLM_TIMEOUT_SEC") or "30").strip() or 30)
 _LLM_CLIENT: Any = None
+# GNAI/ExpertGPT are Intel-internal; the corporate proxy answers them with HTTP 403.
+_HTTP_OPENER = (
+    urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    if (urllib.parse.urlparse(_DEFAULT_BASE_URL).hostname or "").endswith("intel.com")
+    else urllib.request.build_opener()
+)
 
 
 def _clean_text(value: Any) -> str:
@@ -274,7 +281,9 @@ def _llm_predict_category(
     predicted_category: str,
     technology: str,
     categories: List[str],
+    model: str = "",
 ) -> Tuple[str, float] | None:
+    model = model or _DEFAULT_MODEL
     allowed = [c for c in (categories or []) if _clean_text(c)]
     if not allowed:
         return None
@@ -298,7 +307,7 @@ def _llm_predict_category(
     if client is not None:
         try:
             resp = client.chat.completions.create(
-                model=_DEFAULT_MODEL,
+                model=model,
                 temperature=0.0,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -309,9 +318,9 @@ def _llm_predict_category(
         except Exception as exc:
             _LOG.warning("LLM predict via openai SDK failed, trying HTTP fallback: %s", exc)
             content = ""
-    elif _DEFAULT_MODEL and _DEFAULT_API_KEY:
+    elif model and _DEFAULT_API_KEY:
         payload = {
-            "model": _DEFAULT_MODEL,
+            "model": model,
             "temperature": 0.0,
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -319,25 +328,35 @@ def _llm_predict_category(
             ],
         }
         url = _DEFAULT_BASE_URL.rstrip("/") + "/chat/completions"
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {_DEFAULT_API_KEY}",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=max(5.0, _LLM_TIMEOUT_SECONDS)) as resp:
-                payload_resp = json.loads(resp.read().decode("utf-8", errors="replace"))
-            choices = payload_resp.get("choices") or []
-            if choices and isinstance(choices[0], dict):
-                message = choices[0].get("message") or {}
-                content = str(message.get("content") or "")
-        except Exception as exc:
-            _LOG.warning("LLM predict via HTTP fallback failed, fallback to ML: %s", exc)
-            content = ""
+        for attempt in range(2):
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {_DEFAULT_API_KEY}",
+                },
+                method="POST",
+            )
+            try:
+                with _HTTP_OPENER.open(req, timeout=max(5.0, _LLM_TIMEOUT_SECONDS)) as resp:
+                    payload_resp = json.loads(resp.read().decode("utf-8", errors="replace"))
+                choices = payload_resp.get("choices") or []
+                if choices and isinstance(choices[0], dict):
+                    message = choices[0].get("message") or {}
+                    content = str(message.get("content") or "")
+                break
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", errors="replace")
+                # Some models (e.g. gpt-5.6-*) only accept the default temperature.
+                if attempt == 0 and exc.code == 400 and "temperature" in body:
+                    payload.pop("temperature", None)
+                    continue
+                _LOG.warning("LLM predict (%s) failed: HTTP %s %s", model, exc.code, body[:200])
+                break
+            except Exception as exc:
+                _LOG.warning("LLM predict (%s) failed: %s", model, exc)
+                break
 
     if not content:
         return None
@@ -378,7 +397,8 @@ def classify_issue_title(
     if _norm_technology(technology) == "software":
         return "ICPS/Killer", 1.0
 
-    overridden = _override_category_from_text(title, description=description)
+    # Overrides check the title only; free-form descriptions mention "disconnect" etc. far too often.
+    overridden = _override_category_from_text(title)
     if overridden:
         return overridden, 0.99
 
@@ -415,11 +435,12 @@ def classify_issue_title_llm(
     *,
     technology: str = "",
     description: str = "",
+    model: str = "",
 ) -> Tuple[str, float] | None:
     """LLM-only prediction with the same business rules; None when the LLM is unavailable or fails."""
     if _norm_technology(technology) == "software":
         return "ICPS/Killer", 1.0
-    overridden = _override_category_from_text(title, description=description)
+    overridden = _override_category_from_text(title)
     if overridden:
         return overridden, 0.99
     labels = [str(x).strip() for x in (model_bundle.get("labels") or []) if str(x).strip()]
@@ -429,6 +450,7 @@ def classify_issue_title_llm(
         predicted_category="",
         technology=technology,
         categories=labels,
+        model=model,
     )
     if result is None:
         return None

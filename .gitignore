@@ -27,3 +27,8 @@ team_loading_latest.json
 loading_history/
 cache/
 category_reviews/
+
+# Local IPS Golden Set labels and handoff notes (origin is public)
+golden_training_set_20260603_*.csv
+category_golden_reviews.csv
+issue_category_prediction_handoff.md

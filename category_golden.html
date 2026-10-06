@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Golden Set Benchmark: ML vs LLMs</title>
+  <style>
+    :root { color-scheme: light; --ink:#151C27; --muted:#44555F; --surface:#FAF9F3; --surface-2:#F0F3F5; --line:#7686A3; --hairline:#d8dce4; --accent:#BC704A; --accent-ink:#8F4E2F; --accent-soft:rgba(188,112,74,.14); --good:#2F6B47; --deep:#151C27; accent-color:var(--accent); }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body { margin:0; min-height:100vh; color:var(--ink); background:linear-gradient(145deg,#151C27 0%,#465962 52%,#536474 100%); font-family:"Segoe UI",Tahoma,sans-serif; font-size:14px; }
+    main { width:min(1240px,calc(100% - 32px)); margin:32px auto; }
+    :focus-visible { outline:3px solid rgba(188,112,74,.55); outline-offset:2px; }
+    .masthead { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:20px; color:#FAF9F3; }
+    h1 { margin:0; font-size:clamp(28px,4vw,42px); text-shadow:0 1px 2px rgba(21,28,39,.45); }
+    .subtitle { max-width:75ch; margin:8px 0 0; line-height:1.45; }
+    .nav { display:flex; gap:10px; flex-wrap:wrap; }
+    .nav-link { flex:0 0 auto; padding:11px 16px; border:1px solid #FAF9F3; border-radius:6px; color:#FAF9F3; font-weight:700; text-decoration:none; }
+    .nav-link:hover,.nav-link:focus-visible { color:var(--ink); background:#FAF9F3; }
+    .panel { overflow:hidden; margin-bottom:16px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 18px 40px rgba(21,28,39,.22); }
+    .panel-head { display:flex; justify-content:space-between; gap:16px; align-items:center; padding:18px 20px; border-bottom:1px solid var(--line); }
+    .panel-body { padding:20px 24px; }
+    h2 { margin:0; font-size:20px; }
+    .status-text { color:var(--muted); font-size:13px; }
+    .error { color:var(--accent-ink) !important; font-weight:700; }
+    .scoreline { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:18px 28px; margin:4px 0 18px; }
+    .score { padding-left:14px; border-left:3px solid var(--hairline); }
+    .score.best { border-left-color:var(--accent); }
+    .score-value { display:block; font-size:42px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums; }
+    .score-label { display:block; margin-top:6px; font-weight:700; }
+    .score-note { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.4; }
+    .meta { max-width:90ch; margin:0; padding-top:14px; border-top:1px solid var(--hairline); color:var(--muted); line-height:1.5; }
+    .meta strong { color:var(--ink); }
+    .table-wrap { overflow-x:auto; }
+    .grid-table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+    .grid-table th { padding:9px 12px; color:#FAF9F3; background:var(--deep); text-align:right; white-space:nowrap; font-size:12px; }
+    .grid-table td { padding:8px 12px; border-bottom:1px solid var(--hairline); text-align:right; vertical-align:top; }
+    .grid-table th:first-child,.grid-table td:first-child { text-align:left; }
+    .grid-table tbody tr:nth-child(even) td { background:var(--surface-2); }
+    .grid-table td.top { color:var(--good); font-weight:800; }
+    .grid-table td.sub { color:var(--muted); font-size:12px; }
+    .toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px 16px; padding:14px 20px; border-bottom:1px solid var(--line); }
+    .field { display:flex; flex-direction:column; gap:4px; color:var(--muted); font-size:12px; font-weight:700; }
+    .field select,.field input { min-height:36px; padding:7px 9px; border:1px solid var(--line); border-radius:5px; color:var(--ink); background:#fff; font:14px "Segoe UI",Tahoma,sans-serif; }
+    .field.search input { width:min(280px,100%); }
+    .field.reviewer input { width:min(220px,100%); border-color:var(--accent); }
+    .issues td { text-align:left; }
+    .issues th { text-align:left; }
+    .issues td.title { min-width:280px; max-width:460px; line-height:1.4; overflow-wrap:anywhere; }
+    .issues td.case-numbers { min-width:120px; font-variant-numeric:tabular-nums; }
+    .case-numbers span { display:block; white-space:nowrap; }
+    .case-numbers .unmatched { color:var(--muted); }
+    .issues td.wrong { color:var(--accent-ink); font-weight:700; }
+    .issues td.right { color:var(--good); }
+    .issues td.choice { min-width:220px; }
+    .choice select { width:100%; min-height:34px; padding:6px; border:1px solid var(--line); border-radius:5px; background:#fff; font:inherit; }
+    .choice-actions { display:flex; align-items:center; gap:10px; margin-top:6px; }
+    .choice button { padding:5px 10px; border:1px solid var(--deep); border-radius:5px; background:var(--deep); color:#fff; font:700 12px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
+    .choice button.clear { border-color:var(--line); color:var(--ink); background:transparent; }
+    .choice button:disabled { opacity:.55; cursor:not-allowed; }
+    .choice small { display:block; margin-top:5px; color:var(--muted); }
+    .choice .save-status { color:var(--accent-ink); }
+    .tag { display:inline-block; margin-left:6px; color:var(--muted); font-size:11px; font-weight:700; }
+    .table-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 20px; color:var(--muted); font-variant-numeric:tabular-nums; }
+    .show-more { min-height:34px; padding:6px 14px; border:1px solid var(--accent); border-radius:5px; color:var(--ink); background:transparent; font:700 13px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
+    .show-more:hover { background:var(--accent-soft); }
+    .footnote { max-width:90ch; margin:0 0 24px; color:#FAF9F3; font-size:12px; line-height:1.5; }
+    @media (max-width:760px) {
+      main { width:calc(100% - 20px); margin:18px auto; }
+      .masthead { display:block; }
+      .nav { margin-top:14px; }
+      .score-value { font-size:34px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="masthead">
+      <div>
+        <h1>Golden Set Benchmark</h1>
+        <p class="subtitle">ML vs two LLMs on the team's human-labeled golden set. Every issue has a confirmed category, so this is a direct accuracy comparison.</p>
+      </div>
+      <nav class="nav"><a class="nav-link" href="category_golden_reviews.csv" download>Download reviewed results</a><a class="nav-link" href="golden_training_set_20260603_all_ips.csv" download>All IPS matches</a><a class="nav-link" href="category_prediction.html">2026 predictions</a><a class="nav-link" href="index.html">Back to dashboard</a></nav>
+    </header>
+
+    <section class="panel" aria-labelledby="summary-title">
+      <div class="panel-head"><h2 id="summary-title">Overall accuracy</h2><span class="status-text" id="status" role="status" aria-live="polite">Loading...</span></div>
+      <div class="panel-body">
+        <div class="scoreline" id="scores"></div>
+        <p class="meta" id="meta"></p>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="slice-title">
+      <div class="panel-head"><h2 id="slice-title">Accuracy by slice</h2></div>
+      <div class="table-wrap"><table class="grid-table" aria-labelledby="slice-title"><thead id="slice-head"></thead><tbody id="slice-body"></tbody></table></div>
+    </section>
+
+    <section class="panel" aria-labelledby="category-title">
+      <div class="panel-head"><h2 id="category-title">Accuracy by human category</h2><span class="status-text">Best per category in green</span></div>
+      <div class="table-wrap"><table class="grid-table" aria-labelledby="category-title"><thead id="category-head"></thead><tbody id="category-body"></tbody></table></div>
+    </section>
+
+    <section class="panel" aria-labelledby="issues-title">
+      <div class="panel-head"><h2 id="issues-title">Golden issues</h2><span class="status-text" id="showing"></span></div>
+      <div class="toolbar">
+        <label class="field reviewer">Reviewing as<input id="reviewer" type="text" maxlength="100" autocomplete="name" placeholder="Your name"></label>
+        <label class="field">Review status<select id="review-filter"><option value="">All</option><option value="todo">To review</option><option value="reviewed">Reviewed</option></select></label>
+        <label class="field">Show<select id="filter">
+          <option value="all">All issues</option>
+          <option value="disagree">Predictors disagree</option>
+          <option value="ml-right-llm-wrong">ML right, an LLM wrong</option>
+          <option value="llm-right-ml-wrong">An LLM right, ML wrong</option>
+          <option value="all-wrong">Everyone wrong</option>
+        </select></label>
+        <label class="field">Human category<select id="category-filter"><option value="">Any category</option></select></label>
+        <label class="field">IPS details<select id="details-filter"><option value="">Any</option><option value="yes">Matched</option><option value="no">Title only</option></select></label>
+        <label class="field search">Search<input id="search" type="search" placeholder="Title or case number"></label>
+      </div>
+      <div class="table-wrap"><table class="grid-table issues"><thead id="issues-head"></thead><tbody id="issues-body"></tbody></table></div>
+      <div class="table-footer"><span id="count"></span><button class="show-more" type="button" id="show-more">Show 50 more</button></div>
+    </section>
+    <p class="footnote" id="footnote"></p>
+  </main>
+
+  <script>
+    const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8010' : '';
+    const PAGE_SIZE = 50;
+    const $ = selector => document.querySelector(selector);
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const pct = value => value == null ? '–' : `${(Number(value) * 100).toFixed(1)}%`;
+    const state = { data: null, shown: PAGE_SIZE };
+    const REVIEWER_KEY = 'category-golden-reviewer';
+    const SHORT = { ml: 'ML (deployed)', ml_cv: 'ML (held out)' };
+    const short = p => SHORT[p.key] || p.label;
+    const isMl = key => key === 'ml' || key === 'ml_cv';
+
+    function topCells(values) {
+      const best = Math.max(...values.filter(v => v != null));
+      return values.map(v => v != null && v === best);
+    }
+
+    function renderSummary() {
+      const { data } = state;
+      const best = Math.max(...data.predictors.map(p => p.overall.accuracy ?? 0));
+      $('#scores').innerHTML = data.predictors.map(p => `<div class="score ${p.overall.accuracy === best ? 'best' : ''}"><span class="score-value">${pct(p.overall.accuracy)}</span><span class="score-label">${esc(p.label)}</span><p class="score-note">${p.overall.right} of ${p.overall.scored} right. ${esc(p.note || '')}</p></div>`).join('');
+      const skipped = Object.entries(data.skipped || {});
+      const skippedTotal = skipped.reduce((sum, [, n]) => sum + n, 0);
+      const prefix = 'Label not in current list: ';
+      const oldLabels = skipped.filter(([reason]) => reason.startsWith(prefix));
+      const reasons = skipped.filter(([reason]) => !reason.startsWith(prefix)).map(([reason, n]) => `${n} ${reason.replace(/^Software/, 'Software issues')}`);
+      if (oldLabels.length) reasons.push(`${oldLabels.reduce((sum, [, n]) => sum + n, 0)} with labels outside the current category list (${oldLabels.map(([reason]) => reason.slice(prefix.length)).join(', ')})`);
+      $('#meta').innerHTML = `Scored <strong>${data.rows}</strong> labeled issues from <strong>${esc(data.golden_file)}</strong>. <strong>${data.rows_with_details}</strong> matched an IPS case, so the LLMs also saw the description and environment details. The rest were scored on title only. Skipped ${skippedTotal}: ${esc(reasons.join('; '))}. Generated ${esc(data.generated_at.replace('T', ' '))}.`;
+    }
+
+    function renderSlices() {
+      const { data } = state;
+      const techs = Object.keys(data.predictors[0].by_technology).filter(Boolean);
+      const slices = [['All labeled rows', p => p.overall], ['Distinct titles', p => p.distinct_titles], ['With IPS details', p => p.with_details], ...techs.map(t => [t, p => p.by_technology[t]])];
+      $('#slice-head').innerHTML = `<tr><th scope="col">Slice</th>${data.predictors.map(p => `<th scope="col">${esc(short(p))}</th>`).join('')}</tr>`;
+      $('#slice-body').innerHTML = slices.map(([name, pick]) => {
+        const scores = data.predictors.map(pick);
+        const tops = topCells(scores.map(s => s?.accuracy));
+        return `<tr><td>${esc(name)} <span class="tag">${scores[0]?.scored ?? 0} issues</span></td>${scores.map((s, i) => `<td class="${tops[i] ? 'top' : ''}">${pct(s?.accuracy)}</td>`).join('')}</tr>`;
+      }).join('');
+    }
+
+    function renderCategories() {
+      const { data } = state;
+      $('#category-head').innerHTML = `<tr><th scope="col">Category</th><th scope="col">Issues</th>${data.predictors.map(p => `<th scope="col">${esc(short(p))}</th>`).join('')}</tr>`;
+      $('#category-body').innerHTML = [...data.by_category].sort((a, b) => b.support - a.support).map(row => {
+        const values = data.predictors.map(p => row[p.key]);
+        const tops = topCells(values);
+        return `<tr><td>${esc(row.category)}</td><td class="sub">${row.support}</td>${values.map((v, i) => `<td class="${tops[i] ? 'top' : ''}">${pct(v)}</td>`).join('')}</tr>`;
+      }).join('');
+      $('#category-filter').innerHTML = '<option value="">Any category</option>' + data.by_category.map(row => `<option value="${esc(row.category)}">${esc(row.category)}</option>`).join('');
+    }
+
+    function visibleIssues() {
+      const keys = state.data.predictors.map(p => p.key);
+      const filter = $('#filter').value;
+      const review = $('#review-filter').value;
+      const category = $('#category-filter').value;
+      const details = $('#details-filter').value;
+      const search = $('#search').value.trim().toLowerCase();
+      return state.data.issues.filter(issue => {
+        const right = key => issue[key] === issue.human_category;
+        if (review === 'todo' && issue.selected_category) return false;
+        if (review === 'reviewed' && !issue.selected_category) return false;
+        if (category && issue.human_category !== category) return false;
+        if (details && issue.has_details !== (details === 'yes')) return false;
+        if (search && !`${issue.ips_case_numbers || issue.ips_case_number || ''} ${issue.ips_title}`.toLowerCase().includes(search)) return false;
+        if (filter === 'disagree') return new Set(keys.map(key => issue[key])).size > 1;
+        if (filter === 'ml-right-llm-wrong') return right('ml_cv') && keys.some(key => !isMl(key) && !right(key));
+        if (filter === 'llm-right-ml-wrong') return !right('ml_cv') && keys.some(key => !isMl(key) && right(key));
+        if (filter === 'all-wrong') return keys.every(key => !right(key));
+        return true;
+      });
+    }
+
+    function renderIssues() {
+      const { predictors } = state.data;
+      const issues = visibleIssues();
+      const categories = [...new Set([...(state.data.categories || []), ...state.data.by_category.map(row => row.category)])].sort((a, b) => a.localeCompare(b));
+      $('#issues-head').innerHTML = `<tr><th scope="col">IPS #</th><th scope="col">Title</th><th scope="col">Tech</th><th scope="col">Original label</th>${predictors.map(p => `<th scope="col">${esc(short(p))}</th>`).join('')}<th scope="col">Final selection</th></tr>`;
+      $('#issues-body').innerHTML = issues.slice(0, state.shown).map(issue => `<tr data-row-id="${issue.row_id}">
+        <td class="case-numbers">${(issue.ips_case_numbers || issue.ips_case_number || '').split(';').filter(Boolean).map(number => `<span>${esc(number)}</span>`).join('') || '<span class="unmatched">No match</span>'}</td>
+        <td class="title">${esc(issue.ips_title)}${issue.has_details ? '<span class="tag">IPS details</span>' : ''}</td>
+        <td>${esc(issue.technology || '–')}</td>
+        <td><strong>${esc(issue.human_category)}</strong></td>
+        ${predictors.map(p => `<td class="${issue[p.key] === issue.human_category ? 'right' : 'wrong'}">${esc(issue[p.key] || 'no answer')}</td>`).join('')}
+        <td class="choice"><select aria-label="Final category for ${esc(issue.ips_title)}"><option value="">Choose category</option>${categories.map(cat => `<option value="${esc(cat)}" ${issue.selected_category === cat ? 'selected' : ''}>${esc(cat)}</option>`).join('')}</select><div class="choice-actions"><button type="button" data-action="save">Save</button>${issue.selected_category ? '<button type="button" class="clear" data-action="clear">Clear</button>' : ''}</div>${issue.reviewer ? `<small>Reviewed by ${esc(issue.reviewer)} · ${esc(issue.reviewed_at || '')}</small>` : ''}<small class="save-status" role="status"></small></td>
+      </tr>`).join('');
+      $('#count').textContent = `Showing ${Math.min(state.shown, issues.length)} of ${issues.length}`;
+      $('#showing').textContent = `${issues.length} matching`;
+      $('#show-more').hidden = state.shown >= issues.length;
+    }
+
+    async function saveSelection(row, category) {
+      const issue = state.data.issues.find(item => item.row_id === Number(row.dataset.rowId));
+      const reviewer = $('#reviewer').value.trim();
+      const status = row.querySelector('.save-status');
+      if (category && !reviewer) { status.textContent = 'Enter your name first.'; $('#reviewer').focus(); return; }
+      row.querySelectorAll('button, select').forEach(control => { control.disabled = true; });
+      status.textContent = 'Saving...';
+      try {
+        const response = await fetch(`${API_BASE}/api/category-golden-review`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ row_id: issue.row_id, selected_category: category, reviewer }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
+        Object.assign(issue, result.review);
+        renderIssues();
+        $('#status').textContent = `${state.data.issues.filter(item => item.selected_category).length} reviewed of ${state.data.rows}`;
+      } catch (error) {
+        row.querySelectorAll('button, select').forEach(control => { control.disabled = false; });
+        status.textContent = `Not saved: ${error.message}`;
+      }
+    }
+
+    async function load() {
+      const status = $('#status');
+      try {
+        const response = await fetch(`${API_BASE}/api/category-golden`, { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || `HTTP ${response.status}`);
+        state.data = data;
+        $('#reviewer').value = localStorage.getItem(REVIEWER_KEY) || '';
+        renderSummary(); renderSlices(); renderCategories(); renderIssues();
+        status.textContent = `${data.issues.filter(issue => issue.selected_category).length} reviewed of ${data.rows}`;
+        $('#footnote').textContent = `The deployed ML model (${data.model_file}) was trained on these labels, so its score is optimistic. "ML (held out)" retrains the same pipeline five times and keeps identical titles in the same fold. The distinct-titles slice counts repeated issues once. LLMs only see category names, not definitions; only ${data.rows_with_details} matched rows include IPS description/environment, while ML uses titles only. Software issues are excluded by rule. Legacy labels were mapped: Killer and ICPS to ICPS/Killer, Miracast to P2P, Not WiFi Issue to Need-Triage. Re-run category_golden_benchmark.py to refresh.`;
+      } catch (error) {
+        status.classList.add('error'); status.textContent = `Unable to load: ${error.message}`;
+      }
+    }
+
+    ['#filter', '#category-filter', '#details-filter', '#review-filter'].forEach(id => $(id).addEventListener('change', () => { state.shown = PAGE_SIZE; renderIssues(); }));
+    $('#reviewer').addEventListener('change', () => localStorage.setItem(REVIEWER_KEY, $('#reviewer').value.trim()));
+    $('#issues-body').addEventListener('click', event => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) return;
+      const row = button.closest('tr[data-row-id]');
+      if (button.dataset.action === 'save' && !row.querySelector('.choice select').value) {
+        row.querySelector('.save-status').textContent = 'Choose a category first.';
+        return;
+      }
+      saveSelection(row, button.dataset.action === 'clear' ? '' : row.querySelector('.choice select').value);
+    });
+    $('#search').addEventListener('input', () => { state.shown = PAGE_SIZE; renderIssues(); });
+    $('#show-more').addEventListener('click', () => { state.shown += PAGE_SIZE; renderIssues(); });
+    load();
+  </script>
+</body>
+</html>

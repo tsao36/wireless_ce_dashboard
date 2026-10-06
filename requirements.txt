@@ -10,3 +10,4 @@ scikit-learn
 pandas
 openpyxl
 urllib3
+snowflake-connector-python

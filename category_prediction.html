@@ -142,7 +142,7 @@
         <h1>Issue Category Prediction</h1>
         <p class="subtitle">The ML model sorts IPS issues into categories that drive weighted loading. It has not learned from 2026 intake yet. Confirm or correct its guesses below; every review becomes a training example for the next retrain.</p>
       </div>
-      <a class="nav-link" href="index.html">Back to dashboard</a>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;"><a class="nav-link" href="category_golden.html">Golden set benchmark</a><a class="nav-link" href="index.html">Back to dashboard</a></div>
     </header>
 
     <section class="panel" aria-labelledby="status-title">
@@ -162,12 +162,13 @@
             </div>
           </div>
           <div class="compare">
-            <h3 id="compare-title">ML vs LLM on reviewed 2026 issues</h3>
+            <h3 id="compare-title">ML vs LLMs on reviewed 2026 issues</h3>
             <table class="compare-table" aria-labelledby="compare-title">
               <thead><tr><th scope="col">Predictor</th><th scope="col">Right</th><th scope="col">Reviews compared</th><th scope="col">Used for</th></tr></thead>
               <tbody>
                 <tr><th scope="row">ML model</th><td class="num" id="ml-acc">–</td><td id="ml-n">0</td><td class="role">Weighted loading</td></tr>
                 <tr><th scope="row" id="llm-name">LLM</th><td class="num" id="llm-acc">–</td><td id="llm-n">0</td><td class="role">Monitoring only</td></tr>
+                <tr id="llm2-row"><th scope="row" id="llm2-name">LLM 2</th><td class="num" id="llm2-acc">–</td><td id="llm2-n">0</td><td class="role">Monitoring only</td></tr>
               </tbody>
             </table>
             <p class="compare-note" id="compare-note"></p>
@@ -210,7 +211,7 @@
         <label class="field">Predicted as<select id="category-filter"><option value="">Any category</option></select></label>
         <label class="field">Sort<select id="sort"><option value="confidence">Least confident first</option><option value="newest">Newest first</option></select></label>
         <label class="field search">Search<input id="search" type="search" placeholder="Case number or title"></label>
-        <label class="field check"><input type="checkbox" id="disagree-only">Only where ML and LLM disagree</label>
+        <label class="field check"><input type="checkbox" id="disagree-only">Only where ML and an LLM disagree</label>
       </div>
       <p class="hint" id="reviewer-hint">Choose your name under “Reviewing as” to start reviewing.</p>
       <div class="table-wrap">
@@ -288,30 +289,42 @@
       renderComparison();
     }
 
-    const llmAnswer = issue => issue.review?.llm_category || issue.llm_category || '';
+    const LLM_SLOTS = ['llm', 'llm2'];
+    const llmLabel = slot => state.data[slot]?.model || (slot === 'llm' ? 'LLM' : 'LLM 2');
+    const llmAnswer = (issue, slot = 'llm') => issue.review?.[`${slot}_category`] || issue[`${slot}_category`] || '';
+    const llmDiffers = issue => LLM_SLOTS.some(slot => issue[`${slot}_category`] && issue[`${slot}_category`] !== issue.predicted_category);
+    const anyLlmRunning = () => LLM_SLOTS.some(slot => state.data[slot]?.running);
 
     function renderComparison() {
       const issues = state.data.issues;
-      const llm = state.data.llm || {};
       const reviewed = issues.filter(issue => issue.review);
-      const withLlm = reviewed.filter(issue => llmAnswer(issue));
       const mlRight = reviewed.filter(issue => issue.review.verdict === 'correct').length;
-      const llmRight = withLlm.filter(issue => llmAnswer(issue) === issue.review.human_category).length;
       const show = (count, total) => total >= MIN_REVIEWS_FOR_ACCURACY ? pct(count / total) : '–';
       $('#ml-acc').textContent = show(mlRight, reviewed.length);
       $('#ml-n').textContent = reviewed.length;
-      $('#llm-acc').textContent = show(llmRight, withLlm.length);
-      $('#llm-n').textContent = withLlm.length;
-      $('#llm-name').textContent = llm.model ? `LLM (${llm.model})` : 'LLM';
-      const scored = issues.filter(issue => issue.llm_category);
-      const agree = scored.filter(issue => issue.llm_category === issue.predicted_category).length;
       const notes = [];
-      if (!llm.model) notes.push('LLM is not configured on this server (GNAI_TOKEN in .env), so only the ML model is shown.');
-      else {
-        if (llm.error) notes.push(`LLM unavailable: ${llm.error} Retrying in 30 minutes.`);
-        if (scored.length) notes.push(`ML and LLM agree on ${pct(agree / scored.length)} of the ${scored.length} issues the LLM has scored.`);
-        if (llm.running) notes.push(`LLM scoring in progress: ${llm.done} of ${llm.total} issues this run${llm.failed ? `, ${llm.failed} failed` : ''}.`);
-        else if (llm.failed && !llm.error) notes.push(`${plural(llm.failed, 'LLM request')} failed last run; they retry on the next page load.`);
+      if (!state.data.llm?.model) notes.push('LLM is not configured on this server (GNAI_TOKEN in .env), so only the ML model is shown.');
+      $('#llm2-row').hidden = !state.data.llm2?.model;
+      LLM_SLOTS.forEach(slot => {
+        const llm = state.data[slot] || {};
+        if (!llm.model) return;
+        const name = llmLabel(slot);
+        const withLlm = reviewed.filter(issue => llmAnswer(issue, slot));
+        const llmRight = withLlm.filter(issue => llmAnswer(issue, slot) === issue.review.human_category).length;
+        $(`#${slot}-acc`).textContent = show(llmRight, withLlm.length);
+        $(`#${slot}-n`).textContent = withLlm.length;
+        $(`#${slot}-name`).textContent = `LLM (${name})`;
+        const scored = issues.filter(issue => issue[`${slot}_category`]);
+        const agree = scored.filter(issue => issue[`${slot}_category`] === issue.predicted_category).length;
+        if (llm.error) notes.push(`${name} unavailable: ${llm.error} Retrying in 30 minutes.`);
+        if (scored.length) notes.push(`ML and ${name} agree on ${pct(agree / scored.length)} of the ${scored.length} issues it has scored.`);
+        if (llm.running) notes.push(`${name} scoring in progress: ${llm.done} of ${llm.total} issues this run${llm.failed ? `, ${llm.failed} failed` : ''}.`);
+        else if (llm.failed && !llm.error) notes.push(`${plural(llm.failed, `${name} request`)} failed last run; they retry on the next page load.`);
+      });
+      if (state.data.llm?.model && state.data.llm2?.model) {
+        const both = issues.filter(issue => issue.llm_category && issue.llm2_category);
+        const same = both.filter(issue => issue.llm_category === issue.llm2_category).length;
+        if (both.length) notes.push(`${llmLabel('llm')} and ${llmLabel('llm2')} agree on ${pct(same / both.length)} of the ${both.length} issues both have scored.`);
       }
       notes.push(`Accuracy appears after ${MIN_REVIEWS_FOR_ACCURACY} reviews.`);
       $('#compare-note').textContent = notes.join(' ');
@@ -323,7 +336,7 @@
       const search = $('#search').value.trim().toLowerCase();
       if (owner === '__mine' ? issue.engineer !== reviewer() : owner && issue.engineer !== owner) return false;
       if (category && issue.predicted_category !== category) return false;
-      if ($('#disagree-only').checked && (!issue.llm_category || issue.llm_category === issue.predicted_category)) return false;
+      if ($('#disagree-only').checked && !llmDiffers(issue)) return false;
       return !search || `${issue.ips_case_number} ${issue.ips_title}`.toLowerCase().includes(search);
     }
 
@@ -344,26 +357,38 @@
       const disabled = !reviewer() || busy ? 'disabled' : '';
       if (issue.review) {
         const corrected = issue.review.verdict === 'corrected';
-        const llm = llmAnswer(issue);
-        const llmVerdict = llm ? ` · LLM ${llm === issue.review.human_category ? 'right' : 'wrong'}` : '';
+        const llmVerdict = LLM_SLOTS.map(slot => {
+          const answer = llmAnswer(issue, slot);
+          return answer ? ` · ${llmLabel(slot)} ${answer === issue.review.human_category ? 'right' : 'wrong'}` : '';
+        }).join('');
         return `<div class="call"><div class="verdict"><strong class="${corrected ? 'corrected' : ''}">${corrected ? `Corrected to ${esc(issue.review.human_category)}` : 'ML confirmed correct'}</strong><span>by ${esc(issue.review.reviewer)} · ${esc((issue.review.reviewed_at || '').slice(0, 10))}${esc(llmVerdict)}</span></div><button class="undo" type="button" data-action="undo" ${disabled} aria-label="Undo review of case ${esc(issue.ips_case_number)}">Undo</button></div>`;
       }
-      const differs = issue.llm_category && issue.llm_category !== issue.predicted_category;
-      const shown = differs ? [issue.predicted_category, issue.llm_category] : [issue.predicted_category];
+      const sources = new Map([[issue.predicted_category, ['ML']]]);
+      LLM_SLOTS.forEach(slot => {
+        const answer = issue[`${slot}_category`];
+        if (answer) sources.set(answer, [...(sources.get(answer) || []), llmLabel(slot)]);
+      });
+      const differs = sources.size > 1;
+      const shown = [...sources.keys()];
       const options = state.data.categories.filter(name => !shown.includes(name)).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
       const buttons = differs
-        ? `<button class="confirm" type="button" data-action="pick" data-category="${esc(issue.predicted_category)}" ${disabled} aria-label="ML is right: ${esc(issue.predicted_category)} for case ${esc(issue.ips_case_number)}">${esc(issue.predicted_category)} (ML)</button><button class="confirm alt" type="button" data-action="pick" data-category="${esc(issue.llm_category)}" ${disabled} aria-label="LLM is right: ${esc(issue.llm_category)} for case ${esc(issue.ips_case_number)}">${esc(issue.llm_category)} (LLM)</button>`
+        ? shown.map((category, index) => `<button class="confirm ${index ? 'alt' : ''}" type="button" data-action="pick" data-category="${esc(category)}" ${disabled} aria-label="${esc(sources.get(category).join(' and '))} right: ${esc(category)} for case ${esc(issue.ips_case_number)}">${esc(category)} (${esc(sources.get(category).join(', '))})</button>`).join('')
         : `<button class="confirm" type="button" data-action="pick" data-category="${esc(issue.predicted_category)}" ${disabled} aria-label="Prediction ${esc(issue.predicted_category)} is correct for case ${esc(issue.ips_case_number)}">Correct</button>`;
-      return `<div class="call">${buttons}<select class="correct-select" data-action="correct" ${disabled} aria-label="Pick the right category for case ${esc(issue.ips_case_number)}"><option value="">${differs ? 'Neither, pick...' : 'Wrong, pick...'}</option>${options}</select></div>`;
+      return `<div class="call">${buttons}<select class="correct-select" data-action="correct" ${disabled} aria-label="Pick the right category for case ${esc(issue.ips_case_number)}"><option value="">${differs ? 'None of these, pick...' : 'Wrong, pick...'}</option>${options}</select></div>`;
     }
 
     function llmLine(issue) {
-      if (issue.llm_category) {
-        const differs = issue.llm_category !== issue.predicted_category;
-        return `<div class="pred-line llm ${differs ? 'differs' : ''}"><span class="pred-source">LLM</span><strong>${esc(issue.llm_category)}</strong>${differs ? '<span class="differs-tag">differs</span>' : ''}</div>`;
-      }
-      const llm = state.data.llm || {};
-      return llm.model ? `<div class="pred-line llm"><span class="pred-source">LLM</span><span class="pending-text">${llm.running ? 'scoring...' : llm.error ? 'unavailable' : 'not scored'}</span></div>` : '';
+      return LLM_SLOTS.map(slot => {
+        const llm = state.data[slot] || {};
+        if (!llm.model) return '';
+        const answer = issue[`${slot}_category`];
+        const label = `<span class="pred-source">${esc(llmLabel(slot))}</span>`;
+        if (answer) {
+          const differs = answer !== issue.predicted_category;
+          return `<div class="pred-line llm ${differs ? 'differs' : ''}">${label}<strong>${esc(answer)}</strong>${differs ? '<span class="differs-tag">differs</span>' : ''}</div>`;
+        }
+        return `<div class="pred-line llm">${label}<span class="pending-text">${llm.running ? 'scoring...' : llm.error ? 'unavailable' : 'not scored'}</span></div>`;
+      }).join('');
     }
 
     function rowHtml(issue) {
@@ -431,19 +456,26 @@
         const response = await fetch(`${API_BASE}/api/category-llm`, { cache: 'no-store' });
         const result = await response.json();
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        state.data.llm = result.llm;
-        state.data.issues.forEach(issue => {
-          const prediction = result.predictions[issue.ips_case_number];
-          if (!prediction || prediction.category === issue.llm_category) return;
-          issue.llm_category = prediction.category; issue.llm_confidence = prediction.confidence;
+        const changed = new Set();
+        LLM_SLOTS.forEach(slot => {
+          if (!result[slot]) return;
+          state.data[slot] = result[slot].status;
+          state.data.issues.forEach(issue => {
+            const prediction = result[slot].predictions[issue.ips_case_number];
+            if (!prediction || prediction.category === issue[`${slot}_category`]) return;
+            issue[`${slot}_category`] = prediction.category; issue[`${slot}_confidence`] = prediction.confidence;
+            changed.add(issue);
+          });
+        });
+        changed.forEach(issue => {
           const row = $('#review-body').querySelector(`tr[data-case="${CSS.escape(issue.ips_case_number)}"]`);
           if (row && !row.contains(document.activeElement)) updateRow(issue);
         });
         renderComparison();
       } catch (error) {
-        state.data.llm = { ...(state.data.llm || {}), running: false };
+        LLM_SLOTS.forEach(slot => { if (state.data[slot]) state.data[slot] = { ...state.data[slot], running: false }; });
       }
-      if (state.data.llm?.running) llmTimer = window.setTimeout(pollLlm, 10000);
+      if (anyLlmRunning()) llmTimer = window.setTimeout(pollLlm, 10000);
       else renderTable();
     }
 
@@ -468,7 +500,7 @@
         renderModel(); renderStats(); renderTable();
         status.classList.remove('error'); status.textContent = `${data.issues.length} issues created in ${data.year}`;
         window.clearTimeout(llmTimer);
-        if (data.llm?.running) llmTimer = window.setTimeout(pollLlm, 10000);
+        if (anyLlmRunning()) llmTimer = window.setTimeout(pollLlm, 10000);
       } catch (error) {
         $('#review-body').innerHTML = '';
         status.classList.add('error'); status.textContent = `Unable to load predictions: ${error.message}`;
