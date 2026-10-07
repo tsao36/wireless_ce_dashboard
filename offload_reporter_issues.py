@@ -33,6 +33,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _local_recipients = os.path.join(SCRIPT_DIR, "recipients.json")
 _parent_recipients = os.path.join(SCRIPT_DIR, "..", "06_reporting_and_notifications", "recipients.json")
 DEFAULT_RECIPIENTS_PATH = os.path.abspath(_local_recipients if os.path.exists(_local_recipients) else _parent_recipients)
+DASHBOARD_URL = "https://wireless-ce-dashboard.intel.com/"
 
 _SHARED_LOG_FIELDS = [
     "timestamp_utc",
@@ -2258,6 +2259,13 @@ def _get_unpromoted_ips_rows_for_weighting(
     else:
         technology_expr = "NULL"
     title_expr = _title_expr(columns)
+    # Same match as the Field Issues page (loading_dashboard._load_field_issues).
+    field_issue_parts = [
+        f"COALESCE({name}::text, '') ILIKE '%field issue%'"
+        for name in ("ips_title", "jira_summary")
+        if _has(columns, name)
+    ]
+    field_issue_expr = f"({' OR '.join(field_issue_parts)})" if field_issue_parts else "FALSE"
 
     valid_ips_select = f"""
         SELECT
@@ -2265,6 +2273,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             ips_case_number::text AS issue_key,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
+            BOOL_OR(COALESCE(is_field_issue, FALSE)) AS is_field_issue,
                         BOOL_OR(COALESCE(is_stale, FALSE)) AS is_stale,
                         BOOL_OR(COALESCE(is_close_pending, FALSE)) AS is_close_pending,
             'valid_ips' AS source_type
@@ -2284,6 +2293,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             jira_id::text AS issue_key,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
+            BOOL_OR(COALESCE(is_field_issue, FALSE)) AS is_field_issue,
             FALSE AS is_stale,
             FALSE AS is_close_pending,
             'jira' AS source_type
@@ -2305,6 +2315,7 @@ def _get_unpromoted_ips_rows_for_weighting(
                 {ips_case_num_expr} AS ips_case_number,
                 {jira_id_expr} AS jira_id,
                 {title_expr} AS title,
+                {field_issue_expr} AS is_field_issue,
                 {created_expr} AS created_date,
                 {ips_status_expr} AS ips_status,
                 {ips_sub_status_raw_expr} AS ips_sub_status,
@@ -3359,6 +3370,7 @@ def _build_email_body_html(
         "<p>Re-assignment rule: always pick the receiving engineer with the lowest <b>Curr</b> issue count.</p>"
         f"<p>Receiving engineer: <b>{recv_name}</b> (Curr: {recv_curr:.2f}, wCurr Trial: {recv_wcurr_text})</p>"
         "<p><i>Note: wCurr is shown for trial visibility only and is not used in current offload threshold/selection.</i></p>"
+        f"<p>Most updated team loading data: <a href='{DASHBOARD_URL}'>{DASHBOARD_URL}</a></p>"
         f"{history_html}"
         "</body></html>"
     )
@@ -3584,6 +3596,7 @@ def _build_loading_summary_email_html(
         "</head><body><div class='wrap'>"
         "<div class='hero'><h2>IPS Daily Loading Summary</h2>"
         "<p>Daily load snapshot for team balancing. This email is summary-only and does not include offload recommendation actions.</p>"
+        f"<p>Most updated team loading data: <a href='{DASHBOARD_URL}'>{DASHBOARD_URL}</a></p>"
         f"{weighting_flow_html}</div>"
         f"{table_html}"
         f"{definition_html}"
@@ -3992,7 +4005,7 @@ def main() -> int:
             _send_teams_webhook(
                 teams_webhook_url,
                 "IPS Offload Summary Sent",
-                f"Subject: {args.summary_subject}\nRecipients: {len(to_list)}",
+                f"Subject: {args.summary_subject}\nRecipients: {len(to_list)}\nDashboard: {DASHBOARD_URL}",
             )
         return 0
 
@@ -4393,6 +4406,17 @@ def main() -> int:
             "Pending offload reminders skipped: %d pending entrie(s) no longer require offload based on current load.",
             len(pending_entries),
         )
+
+    dashboard_text = f"Most updated team loading data: {DASHBOARD_URL}"
+    for job in trigger_email_jobs:
+        job["body"] = f"{str(job.get('body') or '').rstrip()}\n\n{dashboard_text}\n"
+    if reminder_body:
+        reminder_body = reminder_body.replace(
+            "</body>",
+            f"<p>{dashboard_text}: <a href='{DASHBOARD_URL}'>{DASHBOARD_URL}</a></p></body>",
+        )
+    if body:
+        body = f"{body.rstrip()}\n\n{dashboard_text}\n"
 
     if issue and least_loaded:
         LOG.info("Source queue reporter summary:\n%s", _format_counts(queue_reporter_rows))

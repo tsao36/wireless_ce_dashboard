@@ -49,6 +49,8 @@
     "YB/Lost|WiFi": 2.43,
     "P2P|WiFi": 1.93,
     "RF|WiFi": 1.84,
-    "RF|BT": 1.84
+    "RF|BT": 1.84,
+    "Field Issue|WiFi": 2.25,
+    "Field Issue|BT": 2.25
   }
 }

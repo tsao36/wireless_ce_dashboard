@@ -501,6 +501,9 @@ def classify_and_weight_rows(
         if _norm_technology(tech) == "bt" and "mute" in title.lower():
             category = "Audio"
 
+        if row.get("is_field_issue") and _norm_technology(tech) in {"wifi", "bt"}:
+            category = "Field Issue"
+
         weight = calculate_weight_for_category(
             category,
             category_weights,
