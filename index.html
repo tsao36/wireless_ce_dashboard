@@ -72,6 +72,11 @@
     .toolbar label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; font-weight:700; }
     .toolbar input,.toolbar select { min-height:36px; padding:7px 9px; border:1px solid #7686A3; border-radius:5px; color:var(--ink); background:#fff; font:14px "Segoe UI",Tahoma,sans-serif; }
     .toolbar input:focus-visible,.toolbar select:focus-visible { outline:3px solid rgba(188,112,74,.3); border-color:var(--accent); }
+    .team-filter { display:flex; align-items:center; gap:0; border:1px solid var(--line); border-radius:5px; overflow:hidden; }
+    .team-filter button { min-height:36px; padding:7px 12px; border:0; border-right:1px solid var(--line); color:var(--ink); background:#fff; font:700 13px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
+    .team-filter button:last-child { border-right:0; }
+    .team-filter button[aria-pressed="true"] { color:#fff; background:var(--deep); }
+    .team-filter button:focus-visible { position:relative; z-index:1; outline:3px solid var(--accent); outline-offset:-3px; }
     .footnote { margin:14px 0 0; color:#FAF9F3; font:12px "Segoe UI",Tahoma,sans-serif; }
     .error { color:var(--danger) !important; font-weight:700; }
     .view-switch { display:flex; gap:4px; margin:0 0 16px; border-bottom:1px solid rgba(250,249,243,.45); }
@@ -126,6 +131,7 @@
       .toolbar { display:grid; grid-template-columns:1fr 1fr; }
       .toolbar label { display:block; }
       .toolbar input,.toolbar select { width:100%; margin-top:5px; }
+      .team-filter { grid-column:1 / -1; width:max-content; max-width:100%; }
       .table-wrap { overflow:visible; }
       table { min-width:0; }
       #table-head { display:none; }
@@ -170,7 +176,7 @@
     </section>
     <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab">
     <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
-    <section class="panel"><div class="panel-head"><h2>Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
+    <section class="panel"><div class="panel-head"><h2>Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
       <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
     </section>
   </main>
@@ -185,8 +191,14 @@
     const FILTER_STORAGE_KEY = 'loading-dashboard-view';
     let savedViewState = {};
     try { savedViewState = JSON.parse(sessionStorage.getItem(FILTER_STORAGE_KEY) || '{}'); } catch (error) { savedViewState = {}; }
+    const TEAM_MEMBERS = {
+      wifi: new Set(['zhiqiang cai', 'charles chu', 'kj fang', 'timdaway lai', 'frank lee', 'jackx lee', 'frank yang', 'brenton wu']),
+      bt: new Set(['matt chen', 'steven1 chen', 'yu-wei chen', 'wesley kuo', 'bingyue sun', 'juan zou', 'brenton wu'])
+    };
+    let currentTeamFilter = ['wifi', 'bt'].includes(savedViewState.team) ? savedViewState.team : 'all';
     document.querySelector('#name-filter').value = savedViewState.name || '';
     document.querySelector('#sort-filter').value = ['weighted_loading_value', 'total', 'name'].includes(savedViewState.sort) ? savedViewState.sort : 'weighted_loading_value';
+    document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === currentTeamFilter)); });
     let currentSnapshot = { rows: [], categories: [] };
     let currentActivity = { sheets: [] };
     let activityLoading = false;
@@ -195,14 +207,15 @@
       const toast = document.querySelector('#toast'); toast.textContent = message; toast.hidden = false; window.clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { toast.hidden = true; }, 5000);
     }
     function saveViewState() {
-      savedViewState = { name: document.querySelector('#name-filter').value, category: document.querySelector('#category-filter').value, sort: document.querySelector('#sort-filter').value };
+      savedViewState = { name: document.querySelector('#name-filter').value, category: document.querySelector('#category-filter').value, sort: document.querySelector('#sort-filter').value, team: currentTeamFilter };
       sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(savedViewState));
     }
     function renderSnapshot() {
       const rows = currentSnapshot.rows.filter(row => {
         const nameMatch = String(row.name || '').toLowerCase().includes(document.querySelector('#name-filter').value.toLowerCase());
         const category = document.querySelector('#category-filter').value;
-        return nameMatch && (!category || Number(row.category_counts?.[category] || 0) > 0);
+        const teamMatch = currentTeamFilter === 'all' || TEAM_MEMBERS[currentTeamFilter].has(String(row.name || '').trim().toLowerCase());
+        return nameMatch && teamMatch && (!category || Number(row.category_counts?.[category] || 0) > 0);
       }).sort((left, right) => {
         const key = document.querySelector('#sort-filter').value;
         return key === 'name' ? String(left.name).localeCompare(String(right.name)) : Number(right[key] || 0) - Number(left[key] || 0);
@@ -407,7 +420,13 @@
     document.querySelector('#name-filter').addEventListener('input', () => { saveViewState(); renderSnapshot(); });
     document.querySelector('#category-filter').addEventListener('change', () => { saveViewState(); renderSnapshot(); });
     document.querySelector('#sort-filter').addEventListener('change', () => { saveViewState(); renderSnapshot(); });
-    document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
+    document.querySelector('.team-filter').addEventListener('click', event => {
+      const button = event.target.closest('button[data-team]'); if (!button) return;
+      currentTeamFilter = button.dataset.team;
+      document.querySelectorAll('.team-filter button').forEach(option => { option.setAttribute('aria-pressed', String(option === button)); });
+      saveViewState(); renderSnapshot();
+    });
+    document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
     runButton.addEventListener('click', runBatch);
     restartButton.addEventListener('click', restartServer);
     document.querySelector('#show-weights').addEventListener('click', showWeights);
