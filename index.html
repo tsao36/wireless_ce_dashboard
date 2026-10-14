@@ -48,6 +48,9 @@
     #table-head th:nth-child(2),.member-row td:nth-child(2) { min-width:170px; white-space:nowrap; }
     .member-row:nth-of-type(4n + 3) td { background:#f4f8fc; }
     td:not(:first-child), th:not(:first-child) { text-align:right; }
+    #table-foot td { padding:12px 14px; border-top:2px solid var(--deep); border-bottom:0; background:#E8EEF1; font-weight:800; }
+    #table-foot td:first-child { text-align:left; }
+    #table-foot .team-total-value { color:var(--accent); font-variant-numeric:tabular-nums; }
     .expand-cell { width:48px; padding:0 0 0 10px; text-align:center !important; }
     .expand-button { width:32px; height:32px; padding:0; border:1px solid transparent; border-radius:50%; color:var(--ink); background:transparent; font:700 18px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
     .expand-button:hover,.expand-button:focus-visible { border-color:var(--accent); background:rgba(188,112,74,.14); outline:2px solid rgba(188,112,74,.3); }
@@ -142,6 +145,12 @@
       .member-row .expand-cell { grid-column:1; grid-row:1; padding:0; }
       .member-row .name-cell { grid-column:2; grid-row:1; min-width:0; font-weight:700; text-align:left; white-space:normal; }
       .member-row .weighted-cell { grid-column:3; grid-row:1; }
+      #table-foot { display:block; }
+      #table-foot tr { display:grid; grid-template-columns:40px 1fr auto; align-items:center; padding:8px 8px 8px 4px; border-top:2px solid var(--deep); background:#E8EEF1; }
+      #table-foot td { display:none; padding:6px 8px; border:0; background:transparent; }
+      #table-foot .team-total-label,#table-foot .team-total-value { display:block; }
+      #table-foot .team-total-label { grid-column:2; grid-row:1; text-align:left; }
+      #table-foot .team-total-value { grid-column:3; grid-row:1; text-align:right; }
       .weighted-value { min-width:72px; }
       .detail-row { display:block; }
       .detail-row td { display:block; }
@@ -176,7 +185,7 @@
     </section>
     <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab">
     <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
-    <section class="panel"><div class="panel-head"><h2>Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
+    <section class="panel"><div class="panel-head"><h2>Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody><tfoot id="table-foot"></tfoot></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
       <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
     </section>
   </main>
@@ -227,6 +236,8 @@
         const categories = Object.entries(row.category_counts || {}).filter(([, count]) => Number(count) > 0).sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
         return `<tr class="member-row" aria-expanded="false"><td class="expand-cell"><button class="expand-button" type="button" data-detail-id="${detailId}" aria-expanded="false" aria-controls="${detailId}" aria-label="Show details for ${esc(row.name)}">+</button></td><td class="name-cell">${esc(row.name)}</td><td>${activeUips}</td><td>${activeHsd}</td><td>${row.jira ?? 0}</td><td>${row.total ?? 0}</td><td class="weighted-cell"><button class="weighted-value" type="button" data-row-index="${rowIndex}" aria-label="View weighted loading calculation for ${esc(row.name)}">${esc(row.weighted_loading || '')}</button></td></tr><tr class="detail-row" id="${detailId}" hidden><td colspan="7"><div class="detail-content"><div class="detail-meta"><span>Active IPS <strong>${activeUips}</strong></span><span>Active HSD <strong>${activeHsd}</strong></span><span>Jira <strong>${row.jira ?? 0}</strong></span><span>Total <strong>${row.total ?? 0}</strong></span><span>uIPS <strong>${row.uips ?? 0}</strong></span><span>Stale IPS <strong>${row.stale_ips ?? 0}</strong></span><span>uHSD <strong>${row.uhsd ?? 0}</strong></span><span>Stale HSD <strong>${row.stale_hsd ?? 0}</strong></span></div><h3 class="detail-title">Active issue categories</h3><div class="category-list">${categories.length ? categories.map(([category, count]) => `<span class="category-item">${esc(category)} <strong>${count}</strong></span>`).join('') : '<span class="modal-note">No active categorized issues.</span>'}</div></div></td></tr>`;
       }).join('');
+      const totalIssues = rows.reduce((sum, row) => String(row.name || '').trim().toLowerCase() === 'jonathan tsao' ? sum : sum + Number(row.total || 0), 0);
+      document.querySelector('#table-foot').innerHTML = `<tr><td class="team-total-label" colspan="5">Total issues (excluding Jonathan)</td><td class="team-total-value">${totalIssues}</td><td aria-hidden="true"></td></tr>`;
       const empty = document.querySelector('#empty'); empty.hidden = rows.length > 0; document.querySelector('#empty-message').textContent = currentSnapshot.rows.length ? 'No members match the current filters.' : (currentSnapshot.message || 'No loading rows are available.'); document.querySelector('#clear-filters').hidden = !currentSnapshot.rows.length;
     }
           function renderActivitySheet() {
