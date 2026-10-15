@@ -52,6 +52,7 @@ Ensure `.env` contains valid DB and Graph API credentials:
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`
 - `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `GRAPH_SENDER_UPN`
 
+The Jira integration now requires the organization-provided Cloud base URL in `JIRA_CLOUD_SERVER`; it no longer defaults to the retired Data Center host. Existing connector credentials are still read from `JIRA_USER` and `JIRA_PASSWORD`. Confirm the required Cloud authentication procedure with the internal Jira automation runbook before configuring those credentials.
 ---
 
 ## 🏃 Running the Automation

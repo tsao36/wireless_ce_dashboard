@@ -713,6 +713,8 @@ class JiraBug(jira_api.Jira):
     """
 
     def __init__(self, created_year, opt: RunOptions):
+        if not Sherlock.Jira.server:
+            raise RuntimeError("Set JIRA_CLOUD_SERVER before connecting to Jira; the retired Data Center default is disabled.")
         super().__init__(False)
         log.info("successfully connected to JIRA")
         self.__created_year = created_year
@@ -721,23 +723,41 @@ class JiraBug(jira_api.Jira):
         self._opt = opt
         self._perf = defaultdict(float)
         self._counts = defaultdict(int)
+        self.__team_field_id = self.__resolve_custom_field_id(("Team (migrated)", "Team"))
+        if self.__team_field_id:
+            log.info("JIRA team field resolved to %s", self.__team_field_id)
+        else:
+            log.warning("JIRA Team (migrated) field was not found; team-based filtering may fail")
         self.__external_assignee_field_id = self.__resolve_custom_field_id("External Assignee")
         if self.__external_assignee_field_id:
             log.info("JIRA custom field resolved: External Assignee -> %s", self.__external_assignee_field_id)
         else:
             log.warning("JIRA custom field 'External Assignee' was not found; jira_external_assignee will stay NA")
 
-    def __resolve_custom_field_id(self, field_name: str) -> str:
-        """Resolve Jira custom field id by display name, e.g. customfield_12345."""
+    def __resolve_custom_field_id(self, field_name: str | Sequence[str]) -> str:
+        """Resolve a Jira custom field id by one or more display names."""
+        field_names = [field_name] if isinstance(field_name, str) else list(field_name)
+        normalized_names = [name.strip().casefold() for name in field_names if str(name).strip()]
+        if not normalized_names:
+            return ""
         try:
-            for entry in super().get_jira().fields():
-                if str(entry.get("name", "")).strip().lower() == field_name.strip().lower():
-                    field_id = str(entry.get("id", "")).strip()
-                    if field_id:
-                        return field_id
+            entries = super().get_jira().fields()
+            for name in normalized_names:
+                for entry in entries:
+                    if str(entry.get("name", "")).strip().casefold() == name:
+                        field_id = str(entry.get("id", "")).strip()
+                        if field_id:
+                            return field_id
         except Exception as exc:
-            log.warning("Failed to resolve Jira custom field '%s': %s", field_name, exc)
+            log.warning("Failed to resolve Jira custom field(s) '%s': %s", ", ".join(field_names), exc)
         return ""
+
+    def __team_jql_field(self) -> str:
+        """Return a Cloud-safe JQL reference for the migrated Team field."""
+        match = re.fullmatch(r"customfield_(\d+)", self.__team_field_id, re.IGNORECASE)
+        if match:
+            return f"cf[{match.group(1)}]"
+        return '"Team (migrated)"'
 
     @staticmethod
     def __custom_field_to_text(field_value: object) -> str:
@@ -1261,8 +1281,7 @@ class JiraBug(jira_api.Jira):
         """
         returns the JIRA bug URL
         """
-        # get the JIRA server
-        return f"{Sherlock.Jira.server}browse/{bug.key}"
+        return f"{Sherlock.Jira.server.rstrip('/')}/browse/{bug.key}"
 
     def __get_created_date(self, bug: object) -> datetime:
         """
@@ -1539,15 +1558,20 @@ class JiraBug(jira_api.Jira):
         except (TypeError, AttributeError):
             return DB_NA
 
-    @staticmethod
-    def __get_team(bug: object) -> str:
+    def __get_team(self, bug: object) -> str:
         """
         returns the "team" field
         """
-        try:
-            return bug.fields.customfield_10299.value
-        except (TypeError, AttributeError):
+        field_id = self.__team_field_id
+        if not field_id:
             return DB_NA
+        fields = getattr(bug, "fields", None)
+        field_value = getattr(fields, field_id, None)
+        if field_value is None:
+            raw_payload = getattr(bug, "raw", None)
+            raw_fields = raw_payload.get("fields", {}) if isinstance(raw_payload, dict) else {}
+            field_value = raw_fields.get(field_id)
+        return self.__custom_field_to_text(field_value)
 
     def __get_external_assignee(self, bug: object) -> str:
         """Return Jira External Assignee. This field is expected on GoogleDB sightings only."""
@@ -1660,11 +1684,12 @@ class JiraBug(jira_api.Jira):
             matched_external = bool(external_assignee_key and external_assignee_key in _ENGINEER_NAME_CANONICAL_MAP)
             return matched_assignee, matched_reporter, matched_external
 
-        base_team_filter = "'TEAM' in (CAE, 'CAE - Enterprise', 'CIE Engineering', 'CAE – Certifications', 'CAE - Linux')"
+        team_field = self.__team_jql_field()
+        base_team_filter = f"{team_field} in (CAE, 'CAE - Enterprise', 'CIE Engineering', 'CAE – Certifications', 'CAE - Linux')"
         # Always include Validation India Core Regression + 3rd Party->AP issues in the JIRA pull.
-        extra_filter = "'TEAM' = 'Validation India -> Core Regression' and component = '3rd Party->AP'"
+        extra_filter = f"{team_field} = 'Validation India -> Core Regression' and component = '3rd Party->AP'"
         # Also include GoogleDB team issues regardless of base CAE/CIE team filter.
-        google_db_filter = "'TEAM' = 'GoogleDB'"
+        google_db_filter = f"{team_field} = 'GoogleDB'"
         team_filter = f"({base_team_filter} OR ({extra_filter}) OR ({google_db_filter}))"
 
         jira_query = (
@@ -1684,7 +1709,7 @@ class JiraBug(jira_api.Jira):
             # If JIRA rejects TEAM options (e.g., removed values), fall back to the confirmed "CAE" option
             msg = getattr(exc, "text", "") or str(exc)
             if "option" in msg.lower() and "does not exist" in msg.lower():
-                fallback_team_filter = "'TEAM' = 'CAE'"
+                fallback_team_filter = f"{team_field} = 'CAE'"
                 fallback_team_filter = f"({fallback_team_filter} OR ({extra_filter}) OR ({google_db_filter}))"
                 fallback_query = (
                     f"{jira_api.Field.PROJECT.value} in (WIFI, BT, CIE, DBGT, WOT) "
@@ -1736,8 +1761,7 @@ class JiraBug(jira_api.Jira):
 
         cae_linux_keys = []
         for bug in issues:
-            team_val = getattr(getattr(bug, "fields", None), "customfield_10299", None)
-            team_str = (team_val.value if hasattr(team_val, "value") else team_val) or ""
+            team_str = self.__get_team(bug)
             team_norm = str(team_str).lower()
             if "cae" in team_norm and "linux" in team_norm:
                 cae_linux_keys.append(bug.key)

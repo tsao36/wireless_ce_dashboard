@@ -122,11 +122,11 @@ class GitRepoUrls:
 
 
 class Jira:
-    """Settings and credentials for Jira Server"""
+    """Settings and credentials for the migrated Jira Cloud connector."""
 
-    server = _env("JIRA_SERVER", "https://jira.idoc.intel.com/")
-    staging_server = "https://jirastage.idoc.intel.com/"
-    test_server = "https://jiratest.idoc.intel.com/"
+    server = _env("JIRA_CLOUD_SERVER")
+    staging_server = _env("JIRA_CLOUD_STAGING_SERVER")
+    test_server = _env("JIRA_CLOUD_TEST_SERVER")
     username = _env("JIRA_USER")
     password = _env("JIRA_PASSWORD")
     certificate = _env("JIRA_CERTIFICATE", "NA")
