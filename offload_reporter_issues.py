@@ -404,6 +404,18 @@ def _created_date_expr(columns: set[str]) -> str:
     return "COALESCE(" + ", ".join(parts) + ")"
 
 
+def _source_created_date_expr(columns: set[str], source: str) -> str:
+    candidates = {
+        "ips": ("ips_created_date", "bug_created_date", "jira_created_date", "hsd_submitted_date"),
+        "jira": ("jira_created_date", "bug_created_date", "ips_created_date", "hsd_submitted_date"),
+        "hsd": ("hsd_submitted_date", "bug_created_date", "ips_created_date", "jira_created_date"),
+    }
+    for column in candidates[source]:
+        if _has(columns, column):
+            return f"{column}::date"
+    return "NULL::date"
+
+
 def _title_expr(columns: Optional[set] = None) -> str:
     parts = []
     if columns is None or _has(columns, "ips_title"):
@@ -797,7 +809,7 @@ def _get_reporter_current_counts(
         num_stale = "0"
     hsd_id_expr = "NULL"
     if _has(columns, "hsd_id"):
-        hsd_id_expr = "NULLIF(NULLIF(TRIM(hsd_id::text), ''), 'NA')"
+        hsd_id_expr = "CASE WHEN UPPER(TRIM(COALESCE(hsd_id::text, ''))) IN ('', 'NA') THEN NULL ELSE TRIM(hsd_id::text) END"
 
     hsd_status_reason_expr = "NULL"
     if _has(columns, "hsd_status_reason"):
@@ -2016,6 +2028,7 @@ def _build_combined_trial_table_data(
     weighted_summary: Dict[str, Dict[str, float]],
     weighted_category_rows: List[Dict[str, Any]],
     preferred_categories: Optional[List[str]] = None,
+    issue_details_by_reporter: Optional[Dict[str, List[Dict[str, Any]]]] = None,
 ) -> Tuple[List[str], List[Dict[str, Any]]]:
     category_by_reporter: Dict[str, Dict[str, int]] = {}
     technology_by_reporter: Dict[str, Dict[str, int]] = {}
@@ -2081,6 +2094,7 @@ def _build_combined_trial_table_data(
                 ),
                 "category_counts": category_counts,
                 "technology_counts": technology_counts,
+                "issue_details": issue_details_by_reporter.get(reporter_norm, []) if issue_details_by_reporter is not None else None,
             }
         )
 
@@ -2147,6 +2161,7 @@ def _get_unpromoted_ips_rows_for_weighting(
     *,
     filter_allowed: bool = True,
     include_jira: bool = False,
+    include_hsd: bool = False,
     count_profile: str = "offload",
 ) -> List[Dict[str, Any]]:
     columns = _get_table_columns(db, table)
@@ -2157,6 +2172,10 @@ def _get_unpromoted_ips_rows_for_weighting(
             "CASE WHEN ips_case_number::text ~ '^[0-9]+$' "
             "AND ips_case_number::int > 0 "
             "THEN ips_case_number::int ELSE NULL END"
+        )
+        ips_case_display_expr = (
+            "CASE WHEN ips_case_number::text ~ '^[0-9]+$' "
+            "AND ips_case_number::int > 0 THEN ips_case_number::text ELSE NULL END"
         )
         ips_case_valid_cond = f"{ips_case_num_expr} > 0"
     else:
@@ -2193,6 +2212,40 @@ def _get_unpromoted_ips_rows_for_weighting(
             close_pending_cond = f"{ips_case_valid_cond} AND {close_pending_cond}"
     else:
         close_pending_cond = "FALSE"
+
+    hsd_not_closed_cond = "TRUE"
+    if _has(columns, "hsd_status_reason"):
+        hsd_status_norm = "LOWER(TRIM(COALESCE(NULLIF(NULLIF(hsd_status_reason::text, ''), 'NA'), 'na')))"
+        hsd_not_closed_cond = f"{hsd_status_norm} NOT IN ('closed', 'complete', 'implemented', 'rejected')"
+    hsd_id_expr = "NULL"
+    if _has(columns, "hsd_id"):
+        hsd_id_expr = "NULLIF(NULLIF(TRIM(hsd_id::text), ''), 'NA')"
+        owner_match = "TRUE"
+        if _has(columns, "hsd_owner"):
+            owner_expr = "LOWER(TRIM(COALESCE(hsd_owner::text, '')))"
+            reporter_expr = _reporter_norm_expr(columns)
+            owner_match = f"({owner_expr} <> '' AND {owner_expr} = {reporter_expr})"
+        if _has(columns, "hsd_promoted_id"):
+            promoted_expr = "UPPER(TRIM(COALESCE(hsd_promoted_id::text, '')))"
+            hsd_not_promoted_cond = (
+                f"{hsd_id_expr} IS NOT NULL AND ({promoted_expr} = '' OR {promoted_expr} = 'NA') "
+                f"AND {owner_match} AND {hsd_not_closed_cond}"
+            )
+        else:
+            hsd_not_promoted_cond = f"{hsd_id_expr} IS NOT NULL AND {owner_match} AND {hsd_not_closed_cond}"
+        num_unpromoted_hsd = f"CASE WHEN {hsd_not_promoted_cond} THEN 1 ELSE 0 END"
+        if _has(columns, "hsd_submitted_date"):
+            num_stale_hsd = (
+                "CASE WHEN "
+                f"{hsd_not_promoted_cond} AND hsd_submitted_date IS NOT NULL "
+                "AND (CURRENT_DATE - hsd_submitted_date::date) > 30 THEN 1 ELSE 0 END"
+            )
+        else:
+            num_stale_hsd = "0"
+    else:
+        hsd_not_promoted_cond = "FALSE"
+        num_unpromoted_hsd = "0"
+        num_stale_hsd = "0"
 
     jira_stale_gate = "TRUE"
     if _has(columns, "jira_status"):
@@ -2235,8 +2288,22 @@ def _get_unpromoted_ips_rows_for_weighting(
         stale_cond = "FALSE"
 
     jira_id_expr = _jira_key_expr(columns)
+    if jira_id_expr != "NULL":
+        jira_count_cond = f"{jira_id_expr} IS NOT NULL"
+        if _has(columns, "ips_status"):
+            ips_status_norm = "LOWER(TRIM(COALESCE(NULLIF(ips_status::text, 'NA'), '')))"
+            jira_count_cond = f"({jira_count_cond}) AND ({ips_status_norm} <> 'closed')"
+        if _has(columns, "ips_sub_status"):
+            ips_sub_status_norm = "LOWER(TRIM(COALESCE(NULLIF(ips_sub_status::text, 'NA'), '')))"
+            jira_count_cond = f"({jira_count_cond}) AND ({ips_sub_status_norm} NOT IN ('close-pending', 'pending-closed'))"
+        num_jira = f"CASE WHEN {jira_count_cond} IS TRUE THEN 1 ELSE 0 END"
+    else:
+        num_jira = "0"
 
     created_expr = _created_date_expr(columns)
+    ips_created_expr = _source_created_date_expr(columns, "ips")
+    jira_created_expr = _source_created_date_expr(columns, "jira")
+    hsd_created_expr = _source_created_date_expr(columns, "hsd")
     ips_order_expr = _ips_order_expr(columns)
     ips_status_rank = _ips_status_rank_expr(columns)
     jira_status_rank = _jira_status_rank_expr(columns)
@@ -2244,7 +2311,6 @@ def _get_unpromoted_ips_rows_for_weighting(
     ips_sub_status_raw_expr = "ips_sub_status" if _has(columns, "ips_sub_status") else "NULL"
     jira_status_expr = "jira_status" if _has(columns, "jira_status") else "NULL"
     hsd_status_reason_expr = "hsd_status_reason" if _has(columns, "hsd_status_reason") else "NULL"
-    hsd_id_expr = "hsd_id" if _has(columns, "hsd_id") else "NULL"
     if _has(columns, "technology"):
         technology_expr = "technology"
     elif _has(columns, "bug_project"):
@@ -2271,6 +2337,10 @@ def _get_unpromoted_ips_rows_for_weighting(
         SELECT
             reporter,
             ips_case_number::text AS issue_key,
+            MAX(ips_case_number_display) AS ips_case_number,
+            MAX(hsd_id::text) AS hsd_id,
+            MAX(jira_id::text) AS jira_id,
+            MAX(ips_issue_created_date) AS created,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
             BOOL_OR(COALESCE(is_field_issue, FALSE)) AS is_field_issue,
@@ -2291,6 +2361,10 @@ def _get_unpromoted_ips_rows_for_weighting(
         SELECT
             reporter,
             jira_id::text AS issue_key,
+            MAX(ips_case_number_display) AS ips_case_number,
+            MAX(hsd_id::text) AS hsd_id,
+            MAX(jira_id::text) AS jira_id,
+            MAX(jira_issue_created_date) AS created,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
             BOOL_OR(COALESCE(is_field_issue, FALSE)) AS is_field_issue,
@@ -2300,20 +2374,50 @@ def _get_unpromoted_ips_rows_for_weighting(
         FROM normalized
         WHERE reporter IS NOT NULL
           AND jira_id IS NOT NULL
+                    AND is_jira = 1
           {"AND LOWER(reporter) = ANY(" + allowed_reporters_array + ")" if allowed_reporters_array != "NULL" else ""}
         GROUP BY reporter, jira_id
+    """
+
+    hsd_select = f"""
+        SELECT
+            reporter,
+            hsd_id::text AS issue_key,
+            MAX(ips_case_number_display) AS ips_case_number,
+            MAX(hsd_id::text) AS hsd_id,
+            MAX(jira_id::text) AS jira_id,
+            MAX(hsd_issue_created_date) AS created,
+            MAX(COALESCE(title, '')) AS title,
+            MAX(COALESCE(technology::text, '')) AS technology,
+            BOOL_OR(COALESCE(is_field_issue, FALSE)) AS is_field_issue,
+            FALSE AS is_stale,
+            FALSE AS is_close_pending,
+            'hsd' AS source_type
+        FROM normalized
+        WHERE reporter IS NOT NULL
+          AND hsd_id IS NOT NULL
+          AND is_unpromoted_hsd = 1
+          AND is_stale_hsd = 0
+          {"AND LOWER(reporter) = ANY(" + allowed_reporters_array + ")" if allowed_reporters_array != "NULL" else ""}
+        GROUP BY reporter, hsd_id
     """
 
     final_select = valid_ips_select
     if include_jira:
         final_select = valid_ips_select + "\nUNION ALL\n" + jira_select
+    if include_hsd:
+        final_select += "\nUNION ALL\n" + hsd_select
 
     query = f"""
         WITH base AS (
             SELECT
                 {_reporter_expr(columns)} AS reporter,
                 {ips_case_num_expr} AS ips_case_number,
+                {ips_case_display_expr} AS ips_case_number_display,
                 {jira_id_expr} AS jira_id,
+                {ips_created_expr} AS ips_issue_created_date,
+                {jira_created_expr} AS jira_issue_created_date,
+                {hsd_created_expr} AS hsd_issue_created_date,
                 {title_expr} AS title,
                 {field_issue_expr} AS is_field_issue,
                 {created_expr} AS created_date,
@@ -2324,6 +2428,9 @@ def _get_unpromoted_ips_rows_for_weighting(
                 {hsd_id_expr} AS hsd_id,
                 {technology_expr} AS technology,
                 {unpromoted_ips_cond} AS is_unpromoted_ips,
+                {num_jira} AS is_jira,
+                {num_unpromoted_hsd} AS is_unpromoted_hsd,
+                {num_stale_hsd} AS is_stale_hsd,
                 {stale_cond} AS is_stale,
                 {close_pending_cond} AS is_close_pending,
                 CASE
@@ -2362,7 +2469,7 @@ def _build_weighted_summary(
     model_path: str,
     weight_map_path: str,
     count_profile: str = "offload",
-) -> Tuple[Dict[str, Dict[str, float]], List[Dict[str, Any]]]:
+) -> Tuple[Dict[str, Dict[str, float]], List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     try:
         from issue_category_model import (
             classify_and_weight_rows,
@@ -2371,28 +2478,29 @@ def _build_weighted_summary(
         )
     except Exception as exc:
         LOG.warning("Category weighting disabled (dependency/import issue): %s", exc)
-        return {}, []
+        return {}, [], {}
 
     if not model_path or not os.path.exists(model_path):
         LOG.warning("Category weighting disabled: model file not found (%s)", model_path)
-        return {}, []
+        return {}, [], {}
 
     try:
         model_bundle = load_category_model(model_path)
         category_weights, category_technology_weights, default_weight = load_weight_map(weight_map_path)
     except Exception as exc:
         LOG.warning("Category weighting disabled (model/weight load failed): %s", exc)
-        return {}, []
+        return {}, [], {}
 
     weight_rows = _get_unpromoted_ips_rows_for_weighting(
         db,
         table,
         filter_allowed=True,
         include_jira=True,
+        include_hsd=True,
         count_profile=count_profile,
     )
     if not weight_rows:
-        return {}, []
+        return {}, [], {}
 
     active_limits: Dict[str, Tuple[int, int]] = {}
     for breakdown_row in breakdown_rows:
@@ -2410,8 +2518,10 @@ def _build_weighted_summary(
     active_candidates = [
         row
         for row in weight_rows
-        if not bool(row.get("is_stale")) and not bool(row.get("is_close_pending"))
+        if str(row.get("source_type") or "").lower() in {"valid_ips", "jira"}
+        and not bool(row.get("is_stale")) and not bool(row.get("is_close_pending"))
     ]
+    active_hsd_rows = [row for row in weight_rows if str(row.get("source_type") or "").lower() == "hsd"]
     active_weight_rows: List[Dict[str, Any]] = []
     grouped_candidates: Dict[str, List[Dict[str, Any]]] = {}
     for row in active_candidates:
@@ -2484,6 +2594,30 @@ def _build_weighted_summary(
         )
     )
 
+    issue_details: Dict[str, List[Dict[str, Any]]] = {}
+
+    def add_issue_detail(row: Dict[str, Any]) -> None:
+        reporter = _normalize_reporter(str(row.get("reporter") or ""))
+        if not reporter:
+            return
+        created_value = row.get("created")
+        created = created_value.isoformat()[:10] if hasattr(created_value, "isoformat") else str(created_value or "")[:10]
+        issue_details.setdefault(reporter, []).append({
+            "source_type": str(row.get("source_type") or ""),
+            "ips_case_number": str(row.get("ips_case_number") or "").strip(),
+            "ips_title": str(row.get("title") or "").strip(),
+            "hsd_id": str(row.get("hsd_id") or "").strip(),
+            "jira_id": str(row.get("jira_id") or "").strip(),
+            "created": created,
+        })
+
+    for row in classified:
+        add_issue_detail(row)
+    for row in active_hsd_rows:
+        add_issue_detail(row)
+    for rows in issue_details.values():
+        rows.sort(key=lambda item: (item["created"], item["source_type"], item["ips_case_number"], item["hsd_id"], item["jira_id"]), reverse=True)
+
     result: Dict[str, Dict[str, float]] = {}
     for row in breakdown_rows:
         reporter = _normalize_reporter(str(row.get("reporter") or ""))
@@ -2506,7 +2640,7 @@ def _build_weighted_summary(
             "weighted_jira": round(weighted_jira, 2),
             "weighted_current_issue_count": round(weighted_current, 2),
         }
-    return result, category_rows
+    return result, category_rows, issue_details
 
 
 def _history_now_iso() -> str:
@@ -3606,6 +3740,45 @@ def _build_loading_summary_email_html(
     )
 
 
+def _save_weekly_issue_snapshot(payload: Dict[str, Any]) -> str:
+    generated_at = str(payload.get("generated_at") or "").strip()
+    generated = datetime.fromisoformat(generated_at)
+    iso_year, iso_week, _ = generated.isocalendar()
+    week_key = f"{iso_year}-W{iso_week:02d}"
+    history_dir = os.path.join(SCRIPT_DIR, "issue history")
+    os.makedirs(history_dir, exist_ok=True)
+    archive_path = os.path.join(history_dir, f"{week_key}.json")
+    archive: Dict[str, Any] = {"iso_week": week_key, "snapshots": []}
+
+    if os.path.exists(archive_path):
+        with open(archive_path, "r", encoding="utf-8") as handle:
+            existing = json.load(handle)
+        if not isinstance(existing, dict) or existing.get("iso_week") != week_key or not isinstance(existing.get("snapshots"), list):
+            raise ValueError(f"Invalid weekly issue archive: {archive_path}")
+        archive = existing
+
+    snapshot_entry = {
+        "generated_at": generated_at,
+        "categories": payload.get("categories") or [],
+        "rows": payload.get("rows") or [],
+    }
+    snapshots = [
+        item for item in archive["snapshots"]
+        if not isinstance(item, dict) or item.get("generated_at") != generated_at
+    ]
+    snapshots.append(snapshot_entry)
+    archive["snapshots"] = sorted(
+        snapshots,
+        key=lambda item: str(item.get("generated_at") or "") if isinstance(item, dict) else "",
+    )
+
+    temporary_path = f"{archive_path}.tmp"
+    with open(temporary_path, "w", encoding="utf-8") as handle:
+        json.dump(archive, handle, ensure_ascii=True, indent=2)
+    os.replace(temporary_path, archive_path)
+    return archive_path
+
+
 def _save_loading_snapshot(
     path: str,
     *,
@@ -3629,6 +3802,11 @@ def _save_loading_snapshot(
 
     try:
         _write_json(snapshot_path)
+        try:
+            weekly_issue_path = _save_weekly_issue_snapshot(payload)
+            LOG.info("Saved weekly issue snapshot: %s", weekly_issue_path)
+        except Exception as exc:
+            LOG.warning("Unable to write weekly issue snapshot: %s", exc)
         history_dir = _env_str(
             "OFFLOAD_LOADING_HISTORY_DIR",
             os.path.join(os.path.dirname(snapshot_path), "loading_history"),
@@ -3802,6 +3980,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Send only current loading summary table email (no recommendation/reminder).",
     )
+    parser.add_argument(
+        "--snapshot-only",
+        action="store_true",
+        help="Refresh loading and issue snapshots from the database without changing offload history or sending notifications.",
+    )
     parser.add_argument("--enable-category-weighting", action="store_true")
     parser.add_argument(
         "--disable-weighted-trial-display",
@@ -3837,6 +4020,9 @@ def main() -> int:
     counts = _get_reporter_current_counts(db, table, args.stale_days)
     if not counts:
         LOG.info("No reporter data found in %s", table)
+        if args.snapshot_only:
+            LOG.warning("Snapshot-only run did not write a snapshot because the loading query returned no reporter data.")
+            return 1
         _append_shared_csv_log(
             shared_csv_path,
             table=table,
@@ -3848,11 +4034,14 @@ def main() -> int:
         return 0
 
     history_file = str(args.history_file or "offload_reassignment_history.json").strip()
-    history = _load_history(history_file)
-
-    active_history, history_changed = _refresh_history_statuses(db, table, history)
-    if history_changed:
-        _save_history(history_file, history)
+    if args.snapshot_only:
+        history = {"entries": []}
+        active_history, history_changed = [], False
+    else:
+        history = _load_history(history_file)
+        active_history, history_changed = _refresh_history_statuses(db, table, history)
+        if history_changed:
+            _save_history(history_file, history)
 
     adjusted_counts_all = _apply_pending_adjustments(counts, active_history)
     history_entries = _history_entries_for_table(history, table)
@@ -3872,13 +4061,14 @@ def main() -> int:
     )
     weighted_summary: Dict[str, Dict[str, float]] = {}
     weighted_category_rows: List[Dict[str, Any]] = []
+    issue_details_by_reporter: Optional[Dict[str, List[Dict[str, Any]]]] = None
     combined_trial_categories: List[str] = []
     combined_trial_rows: List[Dict[str, Any]] = []
     weighted_category_order: List[str] = []
     if breakdown:
         LOG.info("Current issue calculation breakdown per reporter:")
         if args.enable_category_weighting or not args.disable_weighted_trial_display:
-            weighted_summary, weighted_category_rows = _build_weighted_summary(
+            weighted_summary, weighted_category_rows, issue_details_by_reporter = _build_weighted_summary(
                 db,
                 table,
                 breakdown,
@@ -3899,6 +4089,7 @@ def main() -> int:
             weighted_summary,
             weighted_category_rows,
             preferred_categories=weighted_category_order,
+            issue_details_by_reporter=issue_details_by_reporter,
         )
         LOG.info("Combined trial table (single table with category columns, decision still uses Curr):")
         for line in _format_combined_trial_table(combined_trial_categories, combined_trial_rows):
@@ -3909,6 +4100,9 @@ def main() -> int:
         categories=combined_trial_categories,
         rows=combined_trial_rows,
     )
+    if args.snapshot_only:
+        LOG.info("Snapshot-only run completed; offload history and notifications were not changed.")
+        return 0
 
     decision_counts_all = _attach_effective_counts(
         adjusted_counts_all,

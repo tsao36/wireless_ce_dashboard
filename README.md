@@ -89,6 +89,10 @@ physical path must be updated to match, or the site will fail with a 500.19 erro
 - `run_offload_reporter_issues_send_email_scheduler.bat`: Windows Task Scheduler wrapper with network/VPN reachability checks.
 - `run_offload_csv_watcher.bat`: Local watcher for real-time offload CSV updates.
 
+To refresh the team-loading snapshot without sending notifications or changing offload history, run `python offload_reporter_issues.py --snapshot-only`. Each run also appends the engineer issue lists to `issue history/YYYY-Www.json` for the corresponding ISO week; the loading page uses the latest snapshot when a member name is opened.
+
+While the dashboard server is running, it starts a snapshot-only refresh at startup and every 10 minutes, even with no browser open. Automatic refreshes share the manual batch lock and skip a tick if a batch is still running. Output is appended to `logs/loading_auto_refresh.log`; launch failures are retried on the next tick. This reads the database without updating it, sending notifications, or changing offload history. Existing browser tabs still need a page refresh to display the newly saved snapshot. Restart the server after upgrading to enable the timer; no separate Scheduled Task is required for the refresh loop.
+
 ---
 
 ## 🚚 Moving / Deploying to Another Location

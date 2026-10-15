@@ -11,6 +11,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -71,6 +72,7 @@ RUN_PROCESS: subprocess.Popen[bytes] | None = None
 RUN_STARTED_AT: str | None = None
 RUN_FINISHED_AT: str | None = None
 RUN_RETURN_CODE: int | None = None
+LOADING_REFRESH_SECONDS = 600
 FIELD_ISSUE_TABLE = "ips_jira_bugs"
 FIELD_ISSUE_KEYWORD = "field issue"
 FIELD_ISSUE_DETAIL_COLUMNS = (
@@ -1250,6 +1252,37 @@ def _warm_caches() -> None:
             print(f"[dashboard] Could not warm {name} cache ({type(exc).__name__}).")
 
 
+def _start_snapshot_refresh() -> bool:
+    global RUN_PROCESS, RUN_STARTED_AT, RUN_FINISHED_AT, RUN_RETURN_CODE
+    with RUN_LOCK:
+        if RUN_PROCESS is not None and RUN_PROCESS.poll() is None:
+            return False
+        if RUN_PROCESS is not None and RUN_PROCESS.returncode:
+            print(f"[dashboard] Previous loading refresh exited with code {RUN_PROCESS.returncode}; retrying.")
+        python_path = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        command = [str(python_path) if python_path.is_file() else sys.executable,
+                   str(ROOT / "offload_reporter_issues.py"), "--snapshot-only"]
+        log_path = ROOT / "logs" / "loading_auto_refresh.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("ab") as output:
+            RUN_PROCESS = subprocess.Popen(command, cwd=ROOT, stdout=output, stderr=subprocess.STDOUT)
+        RUN_STARTED_AT = datetime.now().isoformat(timespec="seconds")
+        RUN_FINISHED_AT = None
+        RUN_RETURN_CODE = None
+        print(f"[dashboard] Automatic loading refresh started at {RUN_STARTED_AT}.")
+        return True
+
+
+def _refresh_loading_periodically(stop: threading.Event) -> None:
+    while not stop.is_set():
+        try:
+            _start_snapshot_refresh()
+        except Exception as exc:
+            print(f"[dashboard] Unable to start loading refresh ({type(exc).__name__}); retrying in 10 minutes.")
+        if stop.wait(LOADING_REFRESH_SECONDS):
+            return
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Serve the weighted team loading dashboard.")
     parser.add_argument("--host", default="127.0.0.1")
@@ -1258,11 +1291,16 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), LoadingDashboardHandler)
     print(f"Loading dashboard: http://{args.host}:{args.port}/")
     threading.Thread(target=_warm_caches, daemon=True).start()
+    refresh_stop = threading.Event()
+    refresh_thread = threading.Thread(target=_refresh_loading_periodically, args=(refresh_stop,), daemon=True)
+    refresh_thread.start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        refresh_stop.set()
+        refresh_thread.join(timeout=5)
         server.server_close()
 
 

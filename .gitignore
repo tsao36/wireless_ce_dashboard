@@ -25,6 +25,7 @@ logs/
 *.log
 team_loading_latest.json
 loading_history/
+issue history/
 cache/
 category_reviews/
 
