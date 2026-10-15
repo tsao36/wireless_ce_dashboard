@@ -89,9 +89,20 @@ physical path must be updated to match, or the site will fail with a 500.19 erro
 - `run_offload_reporter_issues_send_email_scheduler.bat`: Windows Task Scheduler wrapper with network/VPN reachability checks.
 - `run_offload_csv_watcher.bat`: Local watcher for real-time offload CSV updates.
 
+## Team Activity Dashboard
+Run `loading_dashboard.py` from the project root to serve the dashboard and its local APIs:
+
+```cmd
+python loading_dashboard.py --host 127.0.0.1 --port 8010
+```
+
+The activity view reads `CFE work overview.xlsx` from the project root. Replace that local workbook with the latest SharePoint copy, then select **Refresh workbook** in the page. The view includes current-year data and unversioned operating/reference sheets; worksheets explicitly labeled for other years remain in Excel. Formula results use the values saved by Excel.
+
 To refresh the team-loading snapshot without sending notifications or changing offload history, run `python offload_reporter_issues.py --snapshot-only`. Each run also appends the engineer issue lists to `issue history/YYYY-Www.json` for the corresponding ISO week; the loading page uses the latest snapshot when a member name is opened.
 
 While the dashboard server is running, it starts a snapshot-only refresh at startup and every 10 minutes, even with no browser open. Automatic refreshes share the manual batch lock and skip a tick if a batch is still running. Output is appended to `logs/loading_auto_refresh.log`; launch failures are retried on the next tick. This reads the database without updating it, sending notifications, or changing offload history. Existing browser tabs still need a page refresh to display the newly saved snapshot. Restart the server after upgrading to enable the timer; no separate Scheduled Task is required for the refresh loop.
+
+The source workbook is excluded from Git because it contains internal team data. The Python API binds to loopback for the IIS reverse-proxy setup in `web.config`; the IIS site itself must remain restricted to the intended internal network because the dashboard does not require individual sign-in.
 
 ---
 

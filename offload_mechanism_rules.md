@@ -1,6 +1,6 @@
 # Offload Mechanism Rules (Current)
 
-This document explains the active rule set implemented by offload automation.
+This document explains the active rule set implemented by the Wireless CE team dashboard.
 
 ## 1) Purpose
 

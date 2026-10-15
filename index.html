@@ -47,6 +47,8 @@
     td { padding:12px 14px; border-bottom:1px solid #f0dfb8; }
     #table-head th:nth-child(2),.member-row td:nth-child(2) { min-width:170px; white-space:nowrap; }
     .member-row:nth-of-type(4n + 3) td { background:#f4f8fc; }
+    .member-name-button { max-width:100%; padding:4px 0; border:0; color:var(--ink); background:transparent; font:700 14px "Segoe UI",Tahoma,sans-serif; text-align:left; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; overflow-wrap:anywhere; cursor:pointer; }
+    .member-name-button:hover,.member-name-button:focus-visible { color:var(--accent); outline:2px solid var(--accent); outline-offset:2px; }
     td:not(:first-child), th:not(:first-child) { text-align:right; }
     #table-foot td { padding:12px 14px; border-top:2px solid var(--deep); border-bottom:0; background:#E8EEF1; font-weight:800; }
     #table-foot td:first-child { text-align:left; }
@@ -58,6 +60,19 @@
     .detail-row[hidden] { display:none; }
     .detail-row td { padding:0; background:#fff; text-align:left; }
     .detail-content { padding:16px 20px 20px 58px; border-bottom:1px solid var(--line); }
+    .member-issues-row[hidden] { display:none; }
+    .member-issues-row > td { padding:0; background:#fff; text-align:left; }
+    .issue-detail-content { padding:16px 20px 20px 58px; border-bottom:1px solid var(--line); }
+    .issue-detail-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px; }
+    .issue-detail-heading h3 { margin:0; font-size:15px; }
+    .issue-detail-heading span,.issue-empty { color:var(--muted); font-size:12px; }
+    .issue-table-wrap { max-height:min(58vh,560px); overflow:auto; border:1px solid #d8dce4; }
+    .issue-table { width:100%; min-width:860px; border-collapse:collapse; font:13px "Segoe UI",Tahoma,sans-serif; }
+    .issue-table th { position:sticky; top:0; z-index:1; padding:9px 10px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:nowrap; }
+    .issue-table td { padding:8px 10px; border-bottom:1px solid #d8dce4; text-align:left; vertical-align:top; }
+    .issue-table tbody tr:nth-child(even) td { background:#F0F3F5; }
+    .issue-table td.issue-title { min-width:260px; max-width:440px; overflow-wrap:anywhere; }
+    .issue-table td.issue-id,.issue-table td.issue-date { white-space:nowrap; font-variant-numeric:tabular-nums; }
     .detail-meta { display:flex; flex-wrap:wrap; gap:8px 20px; margin-bottom:14px; color:var(--muted); font-size:12px; }
     .detail-meta strong { color:var(--ink); }
     .detail-title { margin:0 0 8px; font-size:13px; }
@@ -137,9 +152,10 @@
       .team-filter { grid-column:1 / -1; width:max-content; max-width:100%; }
       .table-wrap { overflow:visible; }
       table { min-width:0; }
+      #loading-view .table-wrap > table { width:100%; table-layout:fixed; }
       #table-head { display:none; }
-      #table-body { display:block; }
-      .member-row { display:grid; grid-template-columns:40px 1fr auto; align-items:center; padding:8px 8px 8px 4px; border-bottom:1px solid #d8dce4; }
+      #table-body { display:block; width:100%; max-width:100%; }
+      .member-row { display:grid; width:100%; max-width:100%; grid-template-columns:40px 1fr auto; align-items:center; padding:8px 8px 8px 4px; border-bottom:1px solid #d8dce4; }
       .member-row td { display:none; padding:6px 8px; border:0; background:transparent !important; }
       .member-row .expand-cell,.member-row .name-cell,.member-row .weighted-cell { display:block; }
       .member-row .expand-cell { grid-column:1; grid-row:1; padding:0; }
@@ -155,6 +171,10 @@
       .detail-row { display:block; }
       .detail-row td { display:block; }
       .detail-content { padding:14px 16px; }
+      .member-issues-row { display:block; width:100%; max-width:100%; }
+      .member-issues-row > td { display:block; width:100%; min-width:0; }
+      .issue-detail-content { min-width:0; max-width:100%; padding:14px 16px; }
+      .issue-table-wrap { width:100%; min-width:0; max-width:100%; }
       .view-switch { overflow-x:auto; }
       .view-tab { flex:0 0 auto; }
       .activity-toolbar { display:grid; grid-template-columns:1fr 1fr; }
@@ -232,9 +252,15 @@
       document.querySelector('#member-count').textContent = rows.length; document.querySelector('#weighted-total').textContent = money(rows.reduce((sum, row) => sum + Number(row.weighted_loading_value || 0), 0));
       document.querySelector('#table-head').innerHTML = '<tr><th><span class="sr-only">Details</span></th><th>Name</th><th>Active IPS</th><th>Active HSD</th><th>Jira</th><th>Total</th><th>Weighted Loading</th></tr>';
       document.querySelector('#table-body').innerHTML = rows.map(row => {
-        const activeUips = row.active_uips ?? Math.max(0, Number(row.uips || 0) - Number(row.stale_ips || 0) - Number(row.close_pending || 0)); const activeHsd = row.active_hsd ?? Math.max(0, Number(row.uhsd || 0) - Number(row.stale_hsd || 0)); const rowIndex = currentSnapshot.rows.indexOf(row); const detailId = `member-detail-${rowIndex}`;
+        const activeUips = row.active_uips ?? Math.max(0, Number(row.uips || 0) - Number(row.stale_ips || 0) - Number(row.close_pending || 0)); const activeHsd = row.active_hsd ?? Math.max(0, Number(row.uhsd || 0) - Number(row.stale_hsd || 0)); const rowIndex = currentSnapshot.rows.indexOf(row); const detailId = `member-detail-${rowIndex}`; const issueDetailsId = `member-issues-${rowIndex}`;
         const categories = Object.entries(row.category_counts || {}).filter(([, count]) => Number(count) > 0).sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
-        return `<tr class="member-row" aria-expanded="false"><td class="expand-cell"><button class="expand-button" type="button" data-detail-id="${detailId}" aria-expanded="false" aria-controls="${detailId}" aria-label="Show details for ${esc(row.name)}">+</button></td><td class="name-cell">${esc(row.name)}</td><td>${activeUips}</td><td>${activeHsd}</td><td>${row.jira ?? 0}</td><td>${row.total ?? 0}</td><td class="weighted-cell"><button class="weighted-value" type="button" data-row-index="${rowIndex}" aria-label="View weighted loading calculation for ${esc(row.name)}">${esc(row.weighted_loading || '')}</button></td></tr><tr class="detail-row" id="${detailId}" hidden><td colspan="7"><div class="detail-content"><div class="detail-meta"><span>Active IPS <strong>${activeUips}</strong></span><span>Active HSD <strong>${activeHsd}</strong></span><span>Jira <strong>${row.jira ?? 0}</strong></span><span>Total <strong>${row.total ?? 0}</strong></span><span>uIPS <strong>${row.uips ?? 0}</strong></span><span>Stale IPS <strong>${row.stale_ips ?? 0}</strong></span><span>uHSD <strong>${row.uhsd ?? 0}</strong></span><span>Stale HSD <strong>${row.stale_hsd ?? 0}</strong></span></div><h3 class="detail-title">Active issue categories</h3><div class="category-list">${categories.length ? categories.map(([category, count]) => `<span class="category-item">${esc(category)} <strong>${count}</strong></span>`).join('') : '<span class="modal-note">No active categorized issues.</span>'}</div></div></td></tr>`;
+        const issueDetails = Array.isArray(row.issue_details) ? row.issue_details : null;
+        const issueMarkup = issueDetails === null
+          ? '<p class="issue-empty">Issue-level details were not saved in this snapshot. Select a newer snapshot generated with issue details enabled.</p>'
+          : issueDetails.length
+            ? `<div class="issue-table-wrap"><table class="issue-table"><thead><tr><th>Counted as</th><th>IPS #</th><th>IPS title</th><th>HSD promoted #</th><th>Jira promoted #</th><th>Date created</th></tr></thead><tbody>${issueDetails.map(issue => `<tr><td>${esc(({ valid_ips: 'IPS', hsd: 'HSD', jira: 'Jira' })[issue.source_type] || 'Issue')}</td><td class="issue-id">${esc(issue.ips_case_number || '-')}</td><td class="issue-title">${esc(issue.ips_title || '-')}</td><td class="issue-id">${esc(issue.hsd_id || '-')}</td><td class="issue-id">${esc(issue.jira_id || '-')}</td><td class="issue-date">${esc(issue.created || '-')}</td></tr>`).join('')}</tbody></table></div>`
+            : '<p class="issue-empty">No active issue records were counted for this member in this snapshot.</p>';
+        return `<tr class="member-row" aria-expanded="false"><td class="expand-cell"><button class="expand-button" type="button" data-detail-id="${detailId}" aria-expanded="false" aria-controls="${detailId}" aria-label="Show category details for ${esc(row.name)}">+</button></td><td class="name-cell"><button class="member-name-button" type="button" data-issue-detail-id="${issueDetailsId}" aria-expanded="false" aria-controls="${issueDetailsId}" aria-label="Show active issues counted for ${esc(row.name)}">${esc(row.name)}</button></td><td>${activeUips}</td><td>${activeHsd}</td><td>${row.jira ?? 0}</td><td>${row.total ?? 0}</td><td class="weighted-cell"><button class="weighted-value" type="button" data-row-index="${rowIndex}" aria-label="View weighted loading calculation for ${esc(row.name)}">${esc(row.weighted_loading || '')}</button></td></tr><tr class="detail-row" id="${detailId}" hidden><td colspan="7"><div class="detail-content"><div class="detail-meta"><span>Active IPS <strong>${activeUips}</strong></span><span>Active HSD <strong>${activeHsd}</strong></span><span>Jira <strong>${row.jira ?? 0}</strong></span><span>Total <strong>${row.total ?? 0}</strong></span><span>uIPS <strong>${row.uips ?? 0}</strong></span><span>Stale IPS <strong>${row.stale_ips ?? 0}</strong></span><span>uHSD <strong>${row.uhsd ?? 0}</strong></span><span>Stale HSD <strong>${row.stale_hsd ?? 0}</strong></span></div><h3 class="detail-title">Active issue categories</h3><div class="category-list">${categories.length ? categories.map(([category, count]) => `<span class="category-item">${esc(category)} <strong>${count}</strong></span>`).join('') : '<span class="modal-note">No active categorized issues.</span>'}</div></div></td></tr><tr class="member-issues-row" id="${issueDetailsId}" hidden><td colspan="7"><div class="issue-detail-content"><div class="issue-detail-heading"><h3>Active issues counted for ${esc(row.name)}</h3><span>${issueDetails === null ? 'Details unavailable' : `${issueDetails.length} records`}</span></div>${issueMarkup}</div></td></tr>`;
       }).join('');
       const totalIssues = rows.reduce((sum, row) => String(row.name || '').trim().toLowerCase() === 'jonathan tsao' ? sum : sum + Number(row.total || 0), 0);
       document.querySelector('#table-foot').innerHTML = `<tr><td class="team-total-label" colspan="5">Total issues (excluding Jonathan)</td><td class="team-total-value">${totalIssues}</td><td aria-hidden="true"></td></tr>`;
@@ -443,6 +469,15 @@
     document.querySelector('#show-weights').addEventListener('click', showWeights);
     document.querySelector('#close-weights').addEventListener('click', () => document.querySelector('#weights-modal').close());
     document.querySelector('#table-body').addEventListener('click', event => {
+      const issueButton = event.target.closest('.member-name-button');
+      if (issueButton) {
+        const detail = document.getElementById(issueButton.dataset.issueDetailId);
+        const expanded = issueButton.getAttribute('aria-expanded') === 'true';
+        issueButton.setAttribute('aria-expanded', String(!expanded));
+        issueButton.setAttribute('aria-label', `${expanded ? 'Show' : 'Hide'} active issues counted for ${issueButton.textContent}`);
+        detail.hidden = expanded;
+        return;
+      }
       const weightedButton = event.target.closest('.weighted-value'); if (weightedButton) { showCalculation(currentSnapshot.rows[Number(weightedButton.dataset.rowIndex)]); return; }
       const expandButton = event.target.closest('.expand-button'); if (!expandButton) return;
       const detail = document.getElementById(expandButton.dataset.detailId); const expanded = expandButton.getAttribute('aria-expanded') === 'true'; expandButton.setAttribute('aria-expanded', String(!expanded)); expandButton.setAttribute('aria-label', `${expanded ? 'Show' : 'Hide'} details for ${expandButton.closest('tr').querySelector('.name-cell').textContent}`); expandButton.textContent = expanded ? '+' : '-'; expandButton.closest('tr').setAttribute('aria-expanded', String(!expanded)); detail.hidden = expanded;
