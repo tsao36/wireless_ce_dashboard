@@ -2602,8 +2602,13 @@ def _build_weighted_summary(
             return
         created_value = row.get("created")
         created = created_value.isoformat()[:10] if hasattr(created_value, "isoformat") else str(created_value or "")[:10]
+        source_type = str(row.get("source_type") or "")
+        category = str(row.get("predicted_human_category") or "").strip()
+        if not category:
+            category = "HSD (not categorized)" if source_type == "hsd" else "Uncategorized"
         issue_details.setdefault(reporter, []).append({
-            "source_type": str(row.get("source_type") or ""),
+            "source_type": source_type,
+            "category": category,
             "ips_case_number": str(row.get("ips_case_number") or "").strip(),
             "ips_title": str(row.get("title") or "").strip(),
             "hsd_id": str(row.get("hsd_id") or "").strip(),

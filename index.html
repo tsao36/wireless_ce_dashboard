@@ -69,6 +69,9 @@
     .issue-table-wrap { max-height:min(58vh,560px); overflow:auto; border:1px solid #d8dce4; }
     .issue-table { width:100%; min-width:860px; border-collapse:collapse; font:13px "Segoe UI",Tahoma,sans-serif; }
     .issue-table th { position:sticky; top:0; z-index:1; padding:9px 10px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:nowrap; }
+    .issue-table .issue-category-row th { position:static; z-index:auto; padding:8px 10px; color:var(--ink); background:#E8EEF1; text-align:left; white-space:normal; }
+    .issue-category-label { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .issue-category-count { color:var(--muted); font-size:12px; font-weight:400; white-space:nowrap; }
     .issue-table td { padding:8px 10px; border-bottom:1px solid #d8dce4; text-align:left; vertical-align:top; }
     .issue-table tbody tr:nth-child(even) td { background:#F0F3F5; }
     .issue-table td.issue-title { min-width:260px; max-width:440px; overflow-wrap:anywhere; }
@@ -255,12 +258,19 @@
         const activeUips = row.active_uips ?? Math.max(0, Number(row.uips || 0) - Number(row.stale_ips || 0) - Number(row.close_pending || 0)); const activeHsd = row.active_hsd ?? Math.max(0, Number(row.uhsd || 0) - Number(row.stale_hsd || 0)); const rowIndex = currentSnapshot.rows.indexOf(row); const detailId = `member-detail-${rowIndex}`; const issueDetailsId = `member-issues-${rowIndex}`;
         const categories = Object.entries(row.category_counts || {}).filter(([, count]) => Number(count) > 0).sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
         const issueDetails = Array.isArray(row.issue_details) ? row.issue_details : null;
+        const issueGroups = new Map();
+        for (const issue of issueDetails || []) {
+          const category = String(issue.category || (issue.source_type === 'hsd' ? 'HSD (not categorized)' : 'Uncategorized'));
+          if (!issueGroups.has(category)) issueGroups.set(category, []);
+          issueGroups.get(category).push(issue);
+        }
+        const issueGroupRows = [...issueGroups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([category, issues]) => `<tr class="issue-category-row"><th scope="rowgroup" colspan="6"><span class="issue-category-label">${esc(category)}<span class="issue-category-count">${issues.length} ${issues.length === 1 ? 'issue' : 'issues'}</span></span></th></tr>${issues.map(issue => `<tr><td>${esc(({ valid_ips: 'IPS', hsd: 'HSD', jira: 'Jira' })[issue.source_type] || 'Issue')}</td><td class="issue-id">${esc(issue.ips_case_number || '-')}</td><td class="issue-title">${esc(issue.ips_title || '-')}</td><td class="issue-id">${esc(issue.hsd_id || '-')}</td><td class="issue-id">${esc(issue.jira_id || '-')}</td><td class="issue-date">${esc(issue.created || '-')}</td></tr>`).join('')}`).join('');
         const issueMarkup = issueDetails === null
           ? '<p class="issue-empty">Issue-level details were not saved in this snapshot. Select a newer snapshot generated with issue details enabled.</p>'
           : issueDetails.length
-            ? `<div class="issue-table-wrap"><table class="issue-table"><thead><tr><th>Counted as</th><th>IPS #</th><th>IPS title</th><th>HSD promoted #</th><th>Jira promoted #</th><th>Date created</th></tr></thead><tbody>${issueDetails.map(issue => `<tr><td>${esc(({ valid_ips: 'IPS', hsd: 'HSD', jira: 'Jira' })[issue.source_type] || 'Issue')}</td><td class="issue-id">${esc(issue.ips_case_number || '-')}</td><td class="issue-title">${esc(issue.ips_title || '-')}</td><td class="issue-id">${esc(issue.hsd_id || '-')}</td><td class="issue-id">${esc(issue.jira_id || '-')}</td><td class="issue-date">${esc(issue.created || '-')}</td></tr>`).join('')}</tbody></table></div>`
+            ? `<div class="issue-table-wrap"><table class="issue-table"><thead><tr><th>Counted as</th><th>IPS #</th><th>IPS title</th><th>HSD promoted #</th><th>Jira promoted #</th><th>Date created</th></tr></thead><tbody>${issueGroupRows}</tbody></table></div>`
             : '<p class="issue-empty">No active issue records were counted for this member in this snapshot.</p>';
-        return `<tr class="member-row" aria-expanded="false"><td class="expand-cell"><button class="expand-button" type="button" data-detail-id="${detailId}" aria-expanded="false" aria-controls="${detailId}" aria-label="Show category details for ${esc(row.name)}">+</button></td><td class="name-cell"><button class="member-name-button" type="button" data-issue-detail-id="${issueDetailsId}" aria-expanded="false" aria-controls="${issueDetailsId}" aria-label="Show active issues counted for ${esc(row.name)}">${esc(row.name)}</button></td><td>${activeUips}</td><td>${activeHsd}</td><td>${row.jira ?? 0}</td><td>${row.total ?? 0}</td><td class="weighted-cell"><button class="weighted-value" type="button" data-row-index="${rowIndex}" aria-label="View weighted loading calculation for ${esc(row.name)}">${esc(row.weighted_loading || '')}</button></td></tr><tr class="detail-row" id="${detailId}" hidden><td colspan="7"><div class="detail-content"><div class="detail-meta"><span>Active IPS <strong>${activeUips}</strong></span><span>Active HSD <strong>${activeHsd}</strong></span><span>Jira <strong>${row.jira ?? 0}</strong></span><span>Total <strong>${row.total ?? 0}</strong></span><span>uIPS <strong>${row.uips ?? 0}</strong></span><span>Stale IPS <strong>${row.stale_ips ?? 0}</strong></span><span>uHSD <strong>${row.uhsd ?? 0}</strong></span><span>Stale HSD <strong>${row.stale_hsd ?? 0}</strong></span></div><h3 class="detail-title">Active issue categories</h3><div class="category-list">${categories.length ? categories.map(([category, count]) => `<span class="category-item">${esc(category)} <strong>${count}</strong></span>`).join('') : '<span class="modal-note">No active categorized issues.</span>'}</div></div></td></tr><tr class="member-issues-row" id="${issueDetailsId}" hidden><td colspan="7"><div class="issue-detail-content"><div class="issue-detail-heading"><h3>Active issues counted for ${esc(row.name)}</h3><span>${issueDetails === null ? 'Details unavailable' : `${issueDetails.length} records`}</span></div>${issueMarkup}</div></td></tr>`;
+        return `<tr class="member-row" aria-expanded="false"><td class="expand-cell"><button class="expand-button" type="button" data-detail-id="${detailId}" aria-expanded="false" aria-controls="${detailId}" aria-label="Show category details for ${esc(row.name)}">+</button></td><td class="name-cell"><button class="member-name-button" type="button" data-issue-detail-id="${issueDetailsId}" aria-expanded="false" aria-controls="${issueDetailsId}" aria-label="Show active issues counted for ${esc(row.name)}">${esc(row.name)}</button></td><td>${activeUips}</td><td>${activeHsd}</td><td>${row.jira ?? 0}</td><td>${row.total ?? 0}</td><td class="weighted-cell"><button class="weighted-value" type="button" data-row-index="${rowIndex}" aria-label="View weighted loading calculation for ${esc(row.name)}">${esc(row.weighted_loading || '')}</button></td></tr><tr class="detail-row" id="${detailId}" hidden><td colspan="7"><div class="detail-content"><div class="detail-meta"><span>Active IPS <strong>${activeUips}</strong></span><span>Active HSD <strong>${activeHsd}</strong></span><span>Jira <strong>${row.jira ?? 0}</strong></span><span>Total <strong>${row.total ?? 0}</strong></span><span>uIPS <strong>${row.uips ?? 0}</strong></span><span>Stale IPS <strong>${row.stale_ips ?? 0}</strong></span><span>uHSD <strong>${row.uhsd ?? 0}</strong></span><span>Stale HSD <strong>${row.stale_hsd ?? 0}</strong></span></div><h3 class="detail-title">Active issue categories</h3><div class="category-list">${categories.length ? categories.map(([category, count]) => `<span class="category-item">${esc(category)} <strong>${count}</strong></span>`).join('') : '<span class="modal-note">No active categorized issues.</span>'}</div></div></td></tr><tr class="member-issues-row" id="${issueDetailsId}" hidden><td colspan="7"><div class="issue-detail-content"><div class="issue-detail-heading"><h3>Active issues counted for ${esc(row.name)}</h3><span>${issueDetails === null ? 'Details unavailable' : `${issueDetails.length} ${issueDetails.length === 1 ? 'record' : 'records'}`}</span></div>${issueMarkup}</div></td></tr>`;
       }).join('');
       const totalIssues = rows.reduce((sum, row) => String(row.name || '').trim().toLowerCase() === 'jonathan tsao' ? sum : sum + Number(row.total || 0), 0);
       document.querySelector('#table-foot').innerHTML = `<tr><td class="team-total-label" colspan="5">Total issues (excluding Jonathan)</td><td class="team-total-value">${totalIssues}</td><td aria-hidden="true"></td></tr>`;
@@ -473,9 +483,18 @@
       if (issueButton) {
         const detail = document.getElementById(issueButton.dataset.issueDetailId);
         const expanded = issueButton.getAttribute('aria-expanded') === 'true';
+        const categoryButton = issueButton.closest('tr').querySelector('.expand-button');
+        if (categoryButton?.getAttribute('aria-expanded') === 'true') {
+          document.getElementById(categoryButton.dataset.detailId).hidden = true;
+          categoryButton.setAttribute('aria-expanded', 'false');
+          categoryButton.setAttribute('aria-label', `Show category details for ${issueButton.textContent}`);
+          categoryButton.textContent = '+';
+          categoryButton.closest('tr').setAttribute('aria-expanded', 'false');
+        }
         issueButton.setAttribute('aria-expanded', String(!expanded));
         issueButton.setAttribute('aria-label', `${expanded ? 'Show' : 'Hide'} active issues counted for ${issueButton.textContent}`);
         detail.hidden = expanded;
+        if (!expanded) detail.scrollIntoView({ block:'nearest', behavior:'smooth' });
         return;
       }
       const weightedButton = event.target.closest('.weighted-value'); if (weightedButton) { showCalculation(currentSnapshot.rows[Number(weightedButton.dataset.rowIndex)]); return; }
