@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 import threading
+import traceback
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -1103,7 +1104,19 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
             )
         except ValueError as exc:
             self._send_json({"available": False, "message": f"Workbook unavailable: {exc}"}, HTTPStatus.OK)
+        except PermissionError as exc:
+            print(f"[dashboard] Permission denied reading activity workbook '{ACTIVITY_WORKBOOK_PATH}': {exc}")
+            traceback.print_exc()
+            self._send_json(
+                {
+                    "available": False,
+                    "message": "Access denied to the activity workbook. Verify that the dashboard service account can read the configured workbook path.",
+                },
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
         except Exception as exc:
+            print(f"[dashboard] Unable to read activity workbook '{ACTIVITY_WORKBOOK_PATH}': {exc}")
+            traceback.print_exc()
             self._send_json(
                 {"available": False, "message": f"Unable to read workbook ({type(exc).__name__})."},
                 HTTPStatus.INTERNAL_SERVER_ERROR,
