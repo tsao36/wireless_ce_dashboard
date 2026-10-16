@@ -2609,6 +2609,7 @@ def _build_weighted_summary(
         issue_details.setdefault(reporter, []).append({
             "source_type": source_type,
             "category": category,
+            "issue_weight": 1.0 if source_type == "hsd" else float(row.get("issue_weight") or 0.0),
             "ips_case_number": str(row.get("ips_case_number") or "").strip(),
             "ips_title": str(row.get("title") or "").strip(),
             "hsd_id": str(row.get("hsd_id") or "").strip(),

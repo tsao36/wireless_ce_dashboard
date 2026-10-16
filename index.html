@@ -66,16 +66,16 @@
     .issue-detail-heading { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:10px; }
     .issue-detail-heading h3 { margin:0; font-size:15px; }
     .issue-detail-heading span,.issue-empty { color:var(--muted); font-size:12px; }
-    .issue-table-wrap { max-height:min(58vh,560px); overflow:auto; border:1px solid #d8dce4; }
-    .issue-table { width:100%; min-width:860px; border-collapse:collapse; font:13px "Segoe UI",Tahoma,sans-serif; }
-    .issue-table th { position:sticky; top:0; z-index:1; padding:9px 10px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:nowrap; }
-    .issue-table .issue-category-row th { position:static; z-index:auto; padding:8px 10px; color:var(--ink); background:#E8EEF1; text-align:left; white-space:normal; }
-    .issue-category-label { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-    .issue-category-count { color:var(--muted); font-size:12px; font-weight:400; white-space:nowrap; }
+    .issue-table-wrap { max-height:min(58vh,560px); overflow-y:auto; overflow-x:hidden; border:1px solid #d8dce4; }
+    .issue-table { width:100%; min-width:0; table-layout:fixed; border-collapse:collapse; font:13px "Segoe UI",Tahoma,sans-serif; }
+    .issue-table th { position:sticky; top:0; z-index:1; padding:9px 8px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:normal; }
     .issue-table td { padding:8px 10px; border-bottom:1px solid #d8dce4; text-align:left; vertical-align:top; }
     .issue-table tbody tr:nth-child(even) td { background:#F0F3F5; }
-    .issue-table td.issue-title { min-width:260px; max-width:440px; overflow-wrap:anywhere; }
-    .issue-table td.issue-id,.issue-table td.issue-date { white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .issue-table td.issue-title { min-width:0; overflow-wrap:anywhere; }
+    .issue-table td.issue-date,.issue-table td.issue-category { overflow-wrap:anywhere; }
+    .issue-table td.issue-date { font-variant-numeric:tabular-nums; }
+    .issue-identifiers { display:block; margin-top:4px; color:var(--muted); font-size:11px; overflow-wrap:anywhere; }
+    .issue-weight { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
     .detail-meta { display:flex; flex-wrap:wrap; gap:8px 20px; margin-bottom:14px; color:var(--muted); font-size:12px; }
     .detail-meta strong { color:var(--ink); }
     .detail-title { margin:0 0 8px; font-size:13px; }
@@ -258,17 +258,16 @@
         const activeUips = row.active_uips ?? Math.max(0, Number(row.uips || 0) - Number(row.stale_ips || 0) - Number(row.close_pending || 0)); const activeHsd = row.active_hsd ?? Math.max(0, Number(row.uhsd || 0) - Number(row.stale_hsd || 0)); const rowIndex = currentSnapshot.rows.indexOf(row); const detailId = `member-detail-${rowIndex}`; const issueDetailsId = `member-issues-${rowIndex}`;
         const categories = Object.entries(row.category_counts || {}).filter(([, count]) => Number(count) > 0).sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
         const issueDetails = Array.isArray(row.issue_details) ? row.issue_details : null;
-        const issueGroups = new Map();
-        for (const issue of issueDetails || []) {
+        const issueRows = (issueDetails || []).map(issue => {
           const category = String(issue.category || (issue.source_type === 'hsd' ? 'HSD (not categorized)' : 'Uncategorized'));
-          if (!issueGroups.has(category)) issueGroups.set(category, []);
-          issueGroups.get(category).push(issue);
-        }
-        const issueGroupRows = [...issueGroups.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([category, issues]) => `<tr class="issue-category-row"><th scope="rowgroup" colspan="6"><span class="issue-category-label">${esc(category)}<span class="issue-category-count">${issues.length} ${issues.length === 1 ? 'issue' : 'issues'}</span></span></th></tr>${issues.map(issue => `<tr><td>${esc(({ valid_ips: 'IPS', hsd: 'HSD', jira: 'Jira' })[issue.source_type] || 'Issue')}</td><td class="issue-id">${esc(issue.ips_case_number || '-')}</td><td class="issue-title">${esc(issue.ips_title || '-')}</td><td class="issue-id">${esc(issue.hsd_id || '-')}</td><td class="issue-id">${esc(issue.jira_id || '-')}</td><td class="issue-date">${esc(issue.created || '-')}</td></tr>`).join('')}`).join('');
+          const identifiers = [['IPS', issue.ips_case_number], ['HSD', issue.hsd_id], ['Jira', issue.jira_id]].filter(([, value]) => value).map(([label, value]) => `${label} ${value}`).join(' · ');
+          const weight = issue.issue_weight == null ? 'Weight not saved' : `Weight ${weightNumber(issue.issue_weight)}`;
+          return `<tr><td>${esc(({ valid_ips: 'IPS', hsd: 'HSD', jira: 'Jira' })[issue.source_type] || 'Issue')}</td><td class="issue-title">${esc(issue.ips_title || '-')}<span class="issue-identifiers">${esc(identifiers || 'No issue ID')}</span></td><td class="issue-category">${esc(category)}<span class="issue-weight">${weight}</span></td><td class="issue-date">${esc(issue.created || '-')}</td></tr>`;
+        }).join('');
         const issueMarkup = issueDetails === null
           ? '<p class="issue-empty">Issue-level details were not saved in this snapshot. Select a newer snapshot generated with issue details enabled.</p>'
           : issueDetails.length
-            ? `<div class="issue-table-wrap"><table class="issue-table"><thead><tr><th>Counted as</th><th>IPS #</th><th>IPS title</th><th>HSD promoted #</th><th>Jira promoted #</th><th>Date created</th></tr></thead><tbody>${issueGroupRows}</tbody></table></div>`
+            ? `<div class="issue-table-wrap"><table class="issue-table"><colgroup><col style="width:12%"><col style="width:43%"><col style="width:27%"><col style="width:18%"></colgroup><thead><tr><th>Counted as</th><th>Issue</th><th>Category / weight</th><th>Date</th></tr></thead><tbody>${issueRows}</tbody></table></div>`
             : '<p class="issue-empty">No active issue records were counted for this member in this snapshot.</p>';
         return `<tr class="member-row" aria-expanded="false"><td class="expand-cell"><button class="expand-button" type="button" data-detail-id="${detailId}" aria-expanded="false" aria-controls="${detailId}" aria-label="Show category details for ${esc(row.name)}">+</button></td><td class="name-cell"><button class="member-name-button" type="button" data-issue-detail-id="${issueDetailsId}" aria-expanded="false" aria-controls="${issueDetailsId}" aria-label="Show active issues counted for ${esc(row.name)}">${esc(row.name)}</button></td><td>${activeUips}</td><td>${activeHsd}</td><td>${row.jira ?? 0}</td><td>${row.total ?? 0}</td><td class="weighted-cell"><button class="weighted-value" type="button" data-row-index="${rowIndex}" aria-label="View weighted loading calculation for ${esc(row.name)}">${esc(row.weighted_loading || '')}</button></td></tr><tr class="detail-row" id="${detailId}" hidden><td colspan="7"><div class="detail-content"><div class="detail-meta"><span>Active IPS <strong>${activeUips}</strong></span><span>Active HSD <strong>${activeHsd}</strong></span><span>Jira <strong>${row.jira ?? 0}</strong></span><span>Total <strong>${row.total ?? 0}</strong></span><span>uIPS <strong>${row.uips ?? 0}</strong></span><span>Stale IPS <strong>${row.stale_ips ?? 0}</strong></span><span>uHSD <strong>${row.uhsd ?? 0}</strong></span><span>Stale HSD <strong>${row.stale_hsd ?? 0}</strong></span></div><h3 class="detail-title">Active issue categories</h3><div class="category-list">${categories.length ? categories.map(([category, count]) => `<span class="category-item">${esc(category)} <strong>${count}</strong></span>`).join('') : '<span class="modal-note">No active categorized issues.</span>'}</div></div></td></tr><tr class="member-issues-row" id="${issueDetailsId}" hidden><td colspan="7"><div class="issue-detail-content"><div class="issue-detail-heading"><h3>Active issues counted for ${esc(row.name)}</h3><span>${issueDetails === null ? 'Details unavailable' : `${issueDetails.length} ${issueDetails.length === 1 ? 'record' : 'records'}`}</span></div>${issueMarkup}</div></td></tr>`;
       }).join('');
