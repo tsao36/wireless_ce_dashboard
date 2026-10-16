@@ -25,9 +25,13 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from xml.etree import ElementTree as ET
 
 import psycopg2
+from dotenv import load_dotenv
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from psycopg2 import sql
+
+ROOT = Path(__file__).resolve().parent
+load_dotenv(ROOT / ".env", override=False)
 
 from APIs import Sherlock
 import issue_category_model as category_model
@@ -37,7 +41,6 @@ try:
 except Exception:
     snowflake_connector = None
 
-ROOT = Path(__file__).resolve().parent
 SNAPSHOT_PATH = Path(os.environ.get("OFFLOAD_LOADING_SNAPSHOT_FILE", "team_loading_latest.json"))
 if not SNAPSHOT_PATH.is_absolute():
     SNAPSHOT_PATH = ROOT / SNAPSHOT_PATH
@@ -182,9 +185,14 @@ def _activity_category(sheet_name: str, headers: tuple[object, ...]) -> str:
 
 
 def _ensure_activity_workbook() -> Path:
-    if ACTIVITY_WORKBOOK_PATH.is_file():
-        return ACTIVITY_WORKBOOK_PATH
-    if str(ACTIVITY_WORKBOOK_PATH).startswith("\\\\"):
+    is_network_path = str(ACTIVITY_WORKBOOK_PATH).startswith("\\\\")
+    try:
+        if ACTIVITY_WORKBOOK_PATH.is_file():
+            return ACTIVITY_WORKBOOK_PATH
+    except OSError:
+        if not is_network_path:
+            raise
+    if is_network_path:
         _connect_network_workbook()
     if ACTIVITY_WORKBOOK_PATH.is_file():
         return ACTIVITY_WORKBOOK_PATH
