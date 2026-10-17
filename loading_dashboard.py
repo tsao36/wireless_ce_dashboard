@@ -955,6 +955,7 @@ def _load_category_prediction() -> dict:
             model_bundle=CATEGORY_CACHE["bundle"],
         )
         row.update({
+            "hybrid_category": route["primary_category"],
             "provisional_category": route["provisional_category"],
             "routing_tier": route["routing_tier"],
             "secondary_category": route["secondary_category"],

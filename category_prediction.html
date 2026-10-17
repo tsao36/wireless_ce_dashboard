@@ -89,6 +89,7 @@
     .review-table a { color:var(--ink); font-weight:700; text-underline-offset:3px; }
     .prediction { display:flex; flex-direction:column; gap:5px; min-width:170px; }
     .prediction strong { font-size:14px; }
+    .pred-line.hybrid { padding-bottom:4px; border-bottom:1px solid var(--hairline); }
     .pred-line { display:flex; align-items:baseline; gap:8px; }
     .pred-source { min-width:30px; color:var(--muted); font-size:11px; font-weight:800; letter-spacing:.04em; }
     .pred-line.llm { padding-top:5px; border-top:1px dashed var(--hairline); }
@@ -408,7 +409,7 @@
         <td class="title">${esc(issue.ips_title)}</td>
         <td class="nowrap">${esc(issue.technology || '–')}</td>
         <td class="nowrap">${esc(issue.engineer)}</td>
-        <td><div class="prediction"><div class="pred-line"><span class="pred-source">ML</span><strong>${esc(issue.predicted_category)}</strong></div><span class="confidence"><span class="confidence-bar" aria-hidden="true"><span style="width:${confidence}%"></span></span>${confidence}% confident</span><div class="route-line"><span class="pred-source">ROUTE</span><span class="route-badge ${routingTierClass(issue.routing_tier)}">${esc(routingTierLabel(issue.routing_tier))}</span></div>${issue.secondary_category ? `<div class="secondary-category">Secondary: ${esc(issue.secondary_category)}</div>` : ''}${llmLine(issue)}</div></td>
+        <td><div class="prediction"><div class="pred-line hybrid"><span class="pred-source">HYBRID</span><strong>${esc(issue.hybrid_category || issue.predicted_category)}</strong></div><div class="pred-line"><span class="pred-source">ML</span><strong>${esc(issue.predicted_category)}</strong></div><span class="confidence"><span class="confidence-bar" aria-hidden="true"><span style="width:${confidence}%"></span></span>${confidence}% ML confidence</span><div class="route-line"><span class="pred-source">ROUTE</span><span class="route-badge ${routingTierClass(issue.routing_tier)}">${esc(routingTierLabel(issue.routing_tier))}</span></div>${issue.secondary_category ? `<div class="secondary-category">Secondary: ${esc(issue.secondary_category)}</div>` : ''}${llmLine(issue)}</div></td>
         <td>${callCell(issue)}</td>
       </tr>`;
     }
@@ -483,6 +484,7 @@
           if (!issue) return;
           if (issue.routing_tier !== route.routing_tier || issue.secondary_category !== route.secondary_category) changed.add(issue);
           issue.provisional_category = route.provisional_category;
+          issue.hybrid_category = route.primary_category;
           issue.routing_tier = route.routing_tier;
           issue.secondary_category = route.secondary_category;
           issue.needs_human_review = route.needs_human_review;
