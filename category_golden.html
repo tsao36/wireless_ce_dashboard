@@ -52,6 +52,12 @@
     .case-numbers .unmatched { color:var(--muted); }
     .issues td.wrong { color:var(--accent-ink); font-weight:700; }
     .issues td.right { color:var(--good); }
+    .route-badge { display:inline-flex; align-items:center; min-height:21px; padding:2px 7px; border:1px solid var(--line); border-radius:4px; color:var(--ink); background:var(--surface-2); font-size:11px; font-weight:800; white-space:nowrap; }
+    .route-badge.rule { color:#214D34; border-color:#7DA889; background:#E6F0E8; }
+    .route-badge.fast { color:#263F5C; border-color:#8DA6C1; background:#E8EFF6; }
+    .route-badge.consensus { color:#67441F; border-color:#C89A5A; background:#F5EDDE; }
+    .route-badge.review { color:#7A3527; border-color:#C78B79; background:#F6E8E3; }
+    .route-secondary { min-width:120px; color:var(--muted); }
     .issues td.choice { min-width:220px; }
     .choice select { width:100%; min-height:34px; padding:6px; border:1px solid var(--line); border-radius:5px; background:#fff; font:inherit; }
     .choice-actions { display:flex; align-items:center; gap:10px; margin-top:6px; }
@@ -114,6 +120,7 @@
           <option value="all-wrong">Everyone wrong</option>
         </select></label>
         <label class="field">Human category<select id="category-filter"><option value="">Any category</option></select></label>
+        <label class="field">Hybrid route<select id="route-filter"><option value="">Any route</option><option value="Tier1_Rule">Rule</option><option value="Tier2_ML_HighConf">ML high confidence</option><option value="Tier3_LLM_Consensus">LLM consensus</option><option value="Tier3_Disagreement_Queue">Human review</option></select></label>
         <label class="field">IPS details<select id="details-filter"><option value="">Any</option><option value="yes">Matched</option><option value="no">Title only</option></select></label>
         <label class="field search">Search<input id="search" type="search" placeholder="Title or case number"></label>
       </div>
@@ -134,6 +141,8 @@
     const SHORT = { ml: 'ML (deployed)', ml_cv: 'ML (held out)' };
     const short = p => SHORT[p.key] || p.label;
     const isMl = key => key === 'ml' || key === 'ml_cv';
+    const routeLabel = tier => ({ Tier1_Rule: 'Rule', Tier2_ML_HighConf: 'ML high confidence', Tier3_LLM_Consensus: 'LLM consensus', Tier3_Disagreement_Queue: 'Human review' }[tier] || 'Not evaluated');
+    const routeClass = tier => ({ Tier1_Rule: 'rule', Tier2_ML_HighConf: 'fast', Tier3_LLM_Consensus: 'consensus', Tier3_Disagreement_Queue: 'review' }[tier] || 'review');
 
     function topCells(values) {
       const best = Math.max(...values.filter(v => v != null));
@@ -150,7 +159,9 @@
       const oldLabels = skipped.filter(([reason]) => reason.startsWith(prefix));
       const reasons = skipped.filter(([reason]) => !reason.startsWith(prefix)).map(([reason, n]) => `${n} ${reason.replace(/^Software/, 'Software issues')}`);
       if (oldLabels.length) reasons.push(`${oldLabels.reduce((sum, [, n]) => sum + n, 0)} with labels outside the current category list (${oldLabels.map(([reason]) => reason.slice(prefix.length)).join(', ')})`);
-      $('#meta').innerHTML = `Scored <strong>${data.rows}</strong> labeled issues from <strong>${esc(data.golden_file)}</strong>. <strong>${data.rows_with_details}</strong> matched an IPS case, so the LLMs also saw the description and environment details. The rest were scored on title only. Skipped ${skippedTotal}: ${esc(reasons.join('; '))}. Generated ${esc(data.generated_at.replace('T', ' '))}.`;
+      const hybrid = data.hybrid_evaluation;
+      const hybridNote = hybrid ? ` Hybrid ${esc(data.prompt_version || '')}: <strong>${pct(hybrid.overall.primary_accuracy)}</strong> primary accuracy; <strong>${pct(hybrid.overall_human_review_rate)}</strong> routed to human review (${esc((data.hybrid_updated_at || '').replace('T', ' '))}).` : '';
+      $('#meta').innerHTML = `Scored <strong>${data.rows}</strong> labeled issues from <strong>${esc(data.golden_file)}</strong>. <strong>${data.rows_with_details}</strong> matched an IPS case, so the LLMs also saw the description and environment details. The rest were scored on title only. Skipped ${skippedTotal}: ${esc(reasons.join('; '))}. Generated ${esc(data.generated_at.replace('T', ' '))}.${hybridNote}`;
     }
 
     function renderSlices() {
@@ -181,6 +192,7 @@
       const filter = $('#filter').value;
       const review = $('#review-filter').value;
       const category = $('#category-filter').value;
+      const route = $('#route-filter').value;
       const details = $('#details-filter').value;
       const search = $('#search').value.trim().toLowerCase();
       return state.data.issues.filter(issue => {
@@ -188,6 +200,7 @@
         if (review === 'todo' && issue.selected_category) return false;
         if (review === 'reviewed' && !issue.selected_category) return false;
         if (category && issue.human_category !== category) return false;
+        if (route && issue.routing_tier !== route) return false;
         if (details && issue.has_details !== (details === 'yes')) return false;
         if (search && !`${issue.ips_case_numbers || issue.ips_case_number || ''} ${issue.ips_title}`.toLowerCase().includes(search)) return false;
         if (filter === 'disagree') return new Set(keys.map(key => issue[key])).size > 1;
@@ -202,13 +215,15 @@
       const { predictors } = state.data;
       const issues = visibleIssues();
       const categories = [...new Set([...(state.data.categories || []), ...state.data.by_category.map(row => row.category)])].sort((a, b) => a.localeCompare(b));
-      $('#issues-head').innerHTML = `<tr><th scope="col">IPS #</th><th scope="col">Title</th><th scope="col">Tech</th><th scope="col">Original label</th>${predictors.map(p => `<th scope="col">${esc(short(p))}</th>`).join('')}<th scope="col">Final selection</th></tr>`;
+      $('#issues-head').innerHTML = `<tr><th scope="col">IPS #</th><th scope="col">Title</th><th scope="col">Tech</th><th scope="col">Original label</th>${predictors.map(p => `<th scope="col">${esc(short(p))}</th>`).join('')}<th scope="col">Hybrid route</th><th scope="col">Secondary category</th><th scope="col">Final selection</th></tr>`;
       $('#issues-body').innerHTML = issues.slice(0, state.shown).map(issue => `<tr data-row-id="${issue.row_id}">
         <td class="case-numbers">${(issue.ips_case_numbers || issue.ips_case_number || '').split(';').filter(Boolean).map(number => `<span>${esc(number)}</span>`).join('') || '<span class="unmatched">No match</span>'}</td>
         <td class="title">${esc(issue.ips_title)}${issue.has_details ? '<span class="tag">IPS details</span>' : ''}</td>
         <td>${esc(issue.technology || '–')}</td>
         <td><strong>${esc(issue.human_category)}</strong></td>
         ${predictors.map(p => `<td class="${issue[p.key] === issue.human_category ? 'right' : 'wrong'}">${esc(issue[p.key] || 'no answer')}</td>`).join('')}
+        <td><span class="route-badge ${routeClass(issue.routing_tier)}">${esc(routeLabel(issue.routing_tier))}</span></td>
+        <td class="route-secondary">${esc(issue.secondary_category || '–')}</td>
         <td class="choice"><select aria-label="Final category for ${esc(issue.ips_title)}"><option value="">Choose category</option>${categories.map(cat => `<option value="${esc(cat)}" ${issue.selected_category === cat ? 'selected' : ''}>${esc(cat)}</option>`).join('')}</select><div class="choice-actions"><button type="button" data-action="save">Save</button>${issue.selected_category ? '<button type="button" class="clear" data-action="clear">Clear</button>' : ''}</div>${issue.reviewer ? `<small>Reviewed by ${esc(issue.reviewer)} · ${esc(issue.reviewed_at || '')}</small>` : ''}<small class="save-status" role="status"></small></td>
       </tr>`).join('');
       $('#count').textContent = `Showing ${Math.min(state.shown, issues.length)} of ${issues.length}`;
@@ -249,13 +264,13 @@
         $('#reviewer').value = localStorage.getItem(REVIEWER_KEY) || '';
         renderSummary(); renderSlices(); renderCategories(); renderIssues();
         status.textContent = `${data.issues.filter(issue => issue.selected_category).length} reviewed of ${data.rows}`;
-        $('#footnote').textContent = `The deployed ML model (${data.model_file}) was trained on these labels, so its score is optimistic. "ML (held out)" retrains the same pipeline five times and keeps identical titles in the same fold. The distinct-titles slice counts repeated issues once. LLMs only see category names, not definitions; only ${data.rows_with_details} matched rows include IPS description/environment, while ML uses titles only. Software issues are excluded by rule. Legacy labels were mapped: Killer and ICPS to ICPS/Killer, Miracast to P2P, Not WiFi Issue to Need-Triage. Re-run category_golden_benchmark.py to refresh.`;
+        $('#footnote').textContent = `The deployed ML model (${data.model_file}) was trained on these labels, so its score is optimistic. "ML (held out)" uses five GroupKFold splits grouped by normalized title. The hybrid route uses v2.1.1 category definitions and hierarchy; ${data.rows_with_details} rows include verified IPS details. Software issues are excluded by rule. Legacy labels were mapped: Killer and ICPS to ICPS/Killer, Miracast to P2P, Not WiFi Issue to Need-Triage. Re-run category_golden_benchmark.py --detail-benchmark to refresh.`;
       } catch (error) {
         status.classList.add('error'); status.textContent = `Unable to load: ${error.message}`;
       }
     }
 
-    ['#filter', '#category-filter', '#details-filter', '#review-filter'].forEach(id => $(id).addEventListener('change', () => { state.shown = PAGE_SIZE; renderIssues(); }));
+    ['#filter', '#category-filter', '#route-filter', '#details-filter', '#review-filter'].forEach(id => $(id).addEventListener('change', () => { state.shown = PAGE_SIZE; renderIssues(); }));
     $('#reviewer').addEventListener('change', () => localStorage.setItem(REVIEWER_KEY, $('#reviewer').value.trim()));
     $('#issues-body').addEventListener('click', event => {
       const button = event.target.closest('button[data-action]');

@@ -135,8 +135,8 @@ CATEGORY_CACHE: dict = {
     "details": {},
 }
 IPS_DETAIL_MAX_CHARS = 3000
-# The current ML model was trained on titles; details skew it toward Connectivity until it is retrained with them.
-CATEGORY_ML_USE_DETAILS = os.environ.get("CATEGORY_ML_USE_DETAILS", "0").strip().lower() in ("1", "true", "yes")
+# The structured model passed the matched detail-slice gate; legacy bundles still ignore these details.
+CATEGORY_ML_USE_DETAILS = os.environ.get("CATEGORY_ML_USE_DETAILS", "1").strip().lower() in ("1", "true", "yes")
 IPS_PROXY_LOCK = threading.Lock()
 CATEGORY_QUEUE_STATE: dict = {"loaded_at": 0.0, "refreshing": False}
 CATEGORY_QUEUE_LOCK = threading.Lock()
@@ -573,9 +573,18 @@ def _env_details_text(raw: object) -> str:
     return "\n".join(lines)
 
 
-def _ips_detail_text(description: object, env_details: object) -> str:
-    parts = [_strip_html(description), _env_details_text(env_details)]
-    return "\n".join(part for part in parts if part)[:IPS_DETAIL_MAX_CHARS]
+def clean_and_zone_ips_details(title: str, raw_description: object, raw_env: object) -> dict:
+    """Normalize raw Snowflake fields into bounded IPS context zones for prediction."""
+    return category_model.extract_structured_ips_context(
+        title,
+        _strip_html(raw_description),
+        _env_details_text(raw_env),
+    )
+
+
+def _ips_detail_text(description: object, env_details: object, title: str = "") -> str:
+    context = clean_and_zone_ips_details(title, description, env_details)
+    return str(context.get("llm_context") or "")[:IPS_DETAIL_MAX_CHARS]
 
 
 def _ips_case_query(where: str, values: list, chunk_size: int = 500) -> list[tuple]:
@@ -626,8 +635,8 @@ def _ips_case_query(where: str, values: list, chunk_size: int = 500) -> list[tup
     return rows
 
 
-def _fetch_ips_details(case_numbers: list[str]) -> dict[str, str]:
-    """Description + environment details per IPS case from Snowflake; empty when Snowflake is unavailable."""
+def _fetch_ips_details(case_numbers: list[str]) -> dict[str, dict]:
+    """Structured description + environment context per IPS case; empty when Snowflake is unavailable."""
     if not case_numbers:
         return {}
     by_number = {int(number): number for number in case_numbers}
@@ -636,16 +645,20 @@ def _fetch_ips_details(case_numbers: list[str]) -> dict[str, str]:
     except Exception as exc:
         print(f"[dashboard] IPS details fetch failed ({type(exc).__name__}); predicting from titles only.")
         return {}
-    details: dict[str, str] = {}
-    for case_number, _subject, _created, description, env_details in rows:
+    details: dict[str, dict] = {}
+    for case_number, subject, _created, description, env_details in rows:
         # Snowflake CASE_NBR is zero-padded ("00984509"); key by the queue's form.
         key = by_number.get(int(case_number))
         if key:
-            details[key] = _ips_detail_text(description, env_details)
+            details[key] = clean_and_zone_ips_details(str(subject or ""), description, env_details)
     return details
 
 
-def _detail_hash(text: str) -> str:
+def _detail_hash(value: object) -> str:
+    if isinstance(value, dict):
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    else:
+        text = str(value or "")
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16] if text else ""
 
 
@@ -710,13 +723,22 @@ def _load_category_queue() -> dict[str, dict]:
         if technology.lower() == "software":
             continue
         title = _field_issue_text(title)
-        description = details.get(case_number, "") if CATEGORY_ML_USE_DETAILS else ""
-        key = (case_number, title, technology, description)
+        description = details.get(case_number, {}) if CATEGORY_ML_USE_DETAILS else ""
+        key = (case_number, title, technology, _detail_hash(description))
         if key not in CATEGORY_CACHE["predictions"]:
-            CATEGORY_CACHE["predictions"][key] = category_model.classify_issue_title(
-                CATEGORY_CACHE["bundle"], title, technology=technology, description=description, use_llm=False
-            )
-        predicted, confidence = CATEGORY_CACHE["predictions"][key]
+            bundle = CATEGORY_CACHE["bundle"]
+            if bundle.get("feature_mode") == "dual_structured_v2":
+                context = description if isinstance(description, dict) else category_model.extract_structured_ips_context(title, "", "")
+                predicted, confidence, secondary = category_model._predict_dual_feature_model(
+                    bundle, title, technology, context,
+                )
+                CATEGORY_CACHE["predictions"][key] = (predicted, confidence, secondary)
+            else:
+                predicted, confidence = category_model.classify_issue_title(
+                    bundle, title, technology=technology, description=description, use_llm=False
+                )
+                CATEGORY_CACHE["predictions"][key] = (predicted, confidence, None)
+        predicted, confidence, secondary = CATEGORY_CACHE["predictions"][key]
         queue[case_number] = {
             "ips_case_number": case_number,
             "ips_title": title,
@@ -727,6 +749,7 @@ def _load_category_queue() -> dict[str, dict]:
             "technology": technology,
             "predicted_category": predicted,
             "confidence": round(float(confidence), 4),
+            "ml_secondary_category": secondary,
         }
     CATEGORY_CACHE["queue"] = queue
     CATEGORY_CACHE["reviewers"] = reviewers
@@ -782,8 +805,10 @@ def _save_llm_predictions(slot: str) -> None:
 
 def _llm_prediction_for(issue: dict, slot: str = "llm") -> dict | None:
     cached = _llm_predictions(slot).get(issue["ips_case_number"])
-    # A title/technology/details edit or a different LLM model invalidates the cached answer.
+    # A title, details, model, or prompt-version change invalidates the cached answer.
     if not cached or cached.get("title") != issue["ips_title"] or cached.get("technology") != issue["technology"]:
+        return None
+    if cached.get("prompt_version") != category_model.PROMPT_VERSION:
         return None
     if cached.get("details_hash", "") != _detail_hash(CATEGORY_CACHE["details"].get(issue["ips_case_number"], "")):
         return None
@@ -794,13 +819,13 @@ def _run_llm_backfill(slot: str, missing: list[dict], llm_model: str) -> None:
     bundle = CATEGORY_CACHE["bundle"]
     state = LLM_SLOTS[slot]
 
-    def predict(issue: dict) -> tuple[dict, tuple[str, float] | None]:
+    def predict(issue: dict) -> tuple[dict, dict | None]:
         description = CATEGORY_CACHE["details"].get(issue["ips_case_number"], "")
-        return issue, category_model.classify_issue_title_llm(
+        return issue, category_model.classify_issue_title_llm_record(
             bundle, issue["ips_title"], technology=issue["technology"], description=description, model=llm_model
         )
 
-    def record(issue: dict, result: tuple[str, float] | None) -> None:
+    def record(issue: dict, result: dict | None) -> None:
         with LLM_LOCK:
             state["done"] += 1
             if result is None:
@@ -810,9 +835,13 @@ def _run_llm_backfill(slot: str, missing: list[dict], llm_model: str) -> None:
                 "title": issue["ips_title"],
                 "technology": issue["technology"],
                 "details_hash": _detail_hash(CATEGORY_CACHE["details"].get(issue["ips_case_number"], "")),
-                "category": result[0],
-                "confidence": round(float(result[1]), 4),
+                "category": result["primary_category"],
+                "secondary_category": result.get("secondary_category"),
+                "confidence": round(float(result["confidence"]), 4),
+                "evidence_quote": result.get("evidence_quote", ""),
+                "reasoning": result.get("reasoning", ""),
                 "llm_model": llm_model,
+                "prompt_version": category_model.PROMPT_VERSION,
                 "predicted_at": datetime.now().isoformat(timespec="seconds"),
             }
 
@@ -866,13 +895,35 @@ def _llm_status(slot: str = "llm") -> dict:
 
 def _llm_payload() -> dict:
     payload: dict = {}
+    hybrid_predictions = {}
     for slot in LLM_SLOTS:
         predictions = {}
         for case_number, issue in CATEGORY_CACHE["queue"].items():
             cached = _llm_prediction_for(issue, slot)
             if cached:
-                predictions[case_number] = {"category": cached["category"], "confidence": cached["confidence"]}
+                predictions[case_number] = {
+                    "category": cached["category"],
+                    "secondary_category": cached.get("secondary_category"),
+                    "confidence": cached["confidence"],
+                }
         payload[slot] = {"status": _llm_status(slot), "predictions": predictions}
+    for case_number, issue in CATEGORY_CACHE["queue"].items():
+        cached1 = _llm_prediction_for(issue, "llm")
+        cached2 = _llm_prediction_for(issue, "llm2")
+        hybrid_predictions[case_number] = category_model.predict_issue_category_hybrid(
+            {
+                "ips_case_number": case_number,
+                "ips_title": issue["ips_title"],
+                "technology": issue["technology"],
+                "ml_pred": issue["predicted_category"],
+                "ml_confidence": issue["confidence"],
+                "ml_secondary_category": issue.get("ml_secondary_category"),
+                "llm1": cached1,
+                "llm2": cached2,
+            },
+            model_bundle=CATEGORY_CACHE["bundle"],
+        )
+    payload["hybrid"] = {"predictions": hybrid_predictions}
     return payload
 
 
@@ -884,10 +935,31 @@ def _load_category_prediction() -> dict:
     for case_number, issue in queue.items():
         review = reviews.get(case_number)
         row = {**issue, "review": {key: review.get(key, "") for key in REVIEW_SUMMARY_KEYS} if review else None}
+        llm_records = {}
         for slot in LLM_SLOTS:
             llm = _llm_prediction_for(issue, slot)
             row[f"{slot}_category"] = llm["category"] if llm else None
             row[f"{slot}_confidence"] = llm["confidence"] if llm else None
+            row[f"{slot}_secondary_category"] = llm.get("secondary_category") if llm else None
+            llm_records["llm1" if slot == "llm" else "llm2"] = llm
+        route = category_model.predict_issue_category_hybrid(
+            {
+                "ips_case_number": case_number,
+                "ips_title": issue["ips_title"],
+                "technology": issue["technology"],
+                "ml_pred": issue["predicted_category"],
+                "ml_confidence": issue["confidence"],
+                "ml_secondary_category": issue.get("ml_secondary_category"),
+                **llm_records,
+            },
+            model_bundle=CATEGORY_CACHE["bundle"],
+        )
+        row.update({
+            "provisional_category": route["provisional_category"],
+            "routing_tier": route["routing_tier"],
+            "secondary_category": route["secondary_category"],
+            "needs_human_review": route["needs_human_review"],
+        })
         issues.append(row)
     return {
         "year": CURRENT_YEAR,
@@ -926,7 +998,7 @@ def _save_category_review(payload: dict) -> dict:
         review = {
             "ips_title": issue["ips_title"],
             # Saved so the weekly retrain learns from the same description/environment text the model predicts on.
-            "ips_description": CATEGORY_CACHE["details"].get(case_number, ""),
+            "ips_description": CATEGORY_CACHE["details"].get(case_number, {}).get("llm_context", ""),
             "predicted_category": issue["predicted_category"],
             "technology": issue["technology"],
             "human_category": human_category,

@@ -98,6 +98,13 @@
     .confidence { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
     .confidence-bar { width:64px; height:6px; overflow:hidden; background:#fff; border:1px solid var(--hairline); border-radius:3px; }
     .confidence-bar span { display:block; height:100%; background:var(--line); }
+    .route-line { display:flex; align-items:center; gap:7px; margin-top:2px; }
+    .route-badge { display:inline-flex; align-items:center; min-height:21px; padding:2px 7px; border:1px solid var(--line); border-radius:4px; color:var(--ink); background:var(--surface-2); font-size:11px; font-weight:800; }
+    .route-badge.rule { color:#214D34; border-color:#7DA889; background:#E6F0E8; }
+    .route-badge.fast { color:#263F5C; border-color:#8DA6C1; background:#E8EFF6; }
+    .route-badge.consensus { color:#67441F; border-color:#C89A5A; background:#F5EDDE; }
+    .route-badge.review { color:#7A3527; border-color:#C78B79; background:#F6E8E3; }
+    .secondary-category { color:var(--muted); font-size:12px; }
     .call { display:flex; flex-wrap:wrap; align-items:center; gap:8px; min-width:250px; }
     .confirm { min-height:34px; padding:6px 12px; border:1px solid var(--deep); border-radius:5px; color:#FAF9F3; background:var(--deep); font:700 13px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
     .confirm:hover { background:#2A3546; }
@@ -236,6 +243,8 @@
     const $ = selector => document.querySelector(selector);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const pct = value => value == null ? '–' : `${(Number(value) * 100).toFixed(1)}%`;
+    const routingTierLabel = tier => ({ Tier1_Rule: 'Rule', Tier2_ML_HighConf: 'ML high confidence', Tier3_LLM_Consensus: 'LLM consensus', Tier3_Disagreement_Queue: 'Human review' }[tier] || 'Unrouted');
+    const routingTierClass = tier => ({ Tier1_Rule: 'rule', Tier2_ML_HighConf: 'fast', Tier3_LLM_Consensus: 'consensus', Tier3_Disagreement_Queue: 'review' }[tier] || 'review');
     const link = (label, url) => /^https:\/\//i.test(url || '') ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>` : esc(label);
     const state = { data: null, filter: 'todo', shown: PAGE_SIZE, keepVisible: new Set(), saving: new Set() };
     let toastTimer;
@@ -399,7 +408,7 @@
         <td class="title">${esc(issue.ips_title)}</td>
         <td class="nowrap">${esc(issue.technology || '–')}</td>
         <td class="nowrap">${esc(issue.engineer)}</td>
-        <td><div class="prediction"><div class="pred-line"><span class="pred-source">ML</span><strong>${esc(issue.predicted_category)}</strong></div><span class="confidence"><span class="confidence-bar" aria-hidden="true"><span style="width:${confidence}%"></span></span>${confidence}% confident</span>${llmLine(issue)}</div></td>
+        <td><div class="prediction"><div class="pred-line"><span class="pred-source">ML</span><strong>${esc(issue.predicted_category)}</strong></div><span class="confidence"><span class="confidence-bar" aria-hidden="true"><span style="width:${confidence}%"></span></span>${confidence}% confident</span><div class="route-line"><span class="pred-source">ROUTE</span><span class="route-badge ${routingTierClass(issue.routing_tier)}">${esc(routingTierLabel(issue.routing_tier))}</span></div>${issue.secondary_category ? `<div class="secondary-category">Secondary: ${esc(issue.secondary_category)}</div>` : ''}${llmLine(issue)}</div></td>
         <td>${callCell(issue)}</td>
       </tr>`;
     }
@@ -462,10 +471,21 @@
           state.data[slot] = result[slot].status;
           state.data.issues.forEach(issue => {
             const prediction = result[slot].predictions[issue.ips_case_number];
-            if (!prediction || prediction.category === issue[`${slot}_category`]) return;
+            if (!prediction) return;
+            if (prediction.category === issue[`${slot}_category`] && prediction.secondary_category === issue[`${slot}_secondary_category`]) return;
             issue[`${slot}_category`] = prediction.category; issue[`${slot}_confidence`] = prediction.confidence;
+            issue[`${slot}_secondary_category`] = prediction.secondary_category || null;
             changed.add(issue);
           });
+        });
+        Object.entries(result.hybrid?.predictions || {}).forEach(([caseNumber, route]) => {
+          const issue = state.data.issues.find(item => item.ips_case_number === caseNumber);
+          if (!issue) return;
+          if (issue.routing_tier !== route.routing_tier || issue.secondary_category !== route.secondary_category) changed.add(issue);
+          issue.provisional_category = route.provisional_category;
+          issue.routing_tier = route.routing_tier;
+          issue.secondary_category = route.secondary_category;
+          issue.needs_human_review = route.needs_human_review;
         });
         changed.forEach(issue => {
           const row = $('#review-body').querySelector(`tr[data-case="${CSS.escape(issue.ips_case_number)}"]`);
