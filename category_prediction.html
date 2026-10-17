@@ -168,13 +168,19 @@
               <span class="score-label" id="team-accuracy-label">ML right on reviewed 2026 issues</span>
               <p class="score-note" id="team-accuracy-note">Measured from your team's reviews.</p>
             </div>
+            <div>
+              <span class="score-value pending" id="hybrid-accuracy">–</span>
+              <span class="score-label">Hybrid right on reviewed issues</span>
+              <p class="score-note" id="hybrid-accuracy-note">Measured when a hybrid prediction and human review are both available.</p>
+            </div>
           </div>
           <div class="compare">
-            <h3 id="compare-title">ML vs LLMs on reviewed 2026 issues</h3>
+            <h3 id="compare-title">ML, hybrid and LLMs on reviewed 2026 issues</h3>
             <table class="compare-table" aria-labelledby="compare-title">
               <thead><tr><th scope="col">Predictor</th><th scope="col">Right</th><th scope="col">Reviews compared</th><th scope="col">Used for</th></tr></thead>
               <tbody>
                 <tr><th scope="row">ML model</th><td class="num" id="ml-acc">–</td><td id="ml-n">0</td><td class="role">Weighted loading</td></tr>
+                <tr><th scope="row">Hybrid router</th><td class="num" id="hybrid-acc">–</td><td id="hybrid-n">0</td><td class="role">Primary category and review routing</td></tr>
                 <tr><th scope="row" id="llm-name">LLM</th><td class="num" id="llm-acc">–</td><td id="llm-n">0</td><td class="role">Monitoring only</td></tr>
                 <tr id="llm2-row"><th scope="row" id="llm2-name">LLM 2</th><td class="num" id="llm2-acc">–</td><td id="llm2-n">0</td><td class="role">Monitoring only</td></tr>
               </tbody>
@@ -312,6 +318,17 @@
       const show = (count, total) => total >= MIN_REVIEWS_FOR_ACCURACY ? pct(count / total) : '–';
       $('#ml-acc').textContent = show(mlRight, reviewed.length);
       $('#ml-n').textContent = reviewed.length;
+      const hybridReviewed = reviewed.filter(issue => issue.hybrid_category);
+      const hybridRight = hybridReviewed.filter(issue => issue.hybrid_category === issue.review.human_category).length;
+      $('#hybrid-acc').textContent = show(hybridRight, hybridReviewed.length);
+      $('#hybrid-n').textContent = hybridReviewed.length;
+      const hybridAccuracy = $('#hybrid-accuracy');
+      const enoughHybrid = hybridReviewed.length >= MIN_REVIEWS_FOR_ACCURACY;
+      hybridAccuracy.textContent = enoughHybrid ? pct(hybridRight / hybridReviewed.length) : '–';
+      hybridAccuracy.classList.toggle('pending', !enoughHybrid);
+      $('#hybrid-accuracy-note').textContent = enoughHybrid
+        ? `${hybridRight} correct across ${plural(hybridReviewed.length, 'reviewed hybrid prediction')}.`
+        : `Shown after ${MIN_REVIEWS_FOR_ACCURACY} reviewed hybrid predictions. ${Math.max(0, MIN_REVIEWS_FOR_ACCURACY - hybridReviewed.length)} to go.`;
       const notes = [];
       if (!state.data.llm?.model) notes.push('LLM is not configured on this server (GNAI_TOKEN in .env), so only the ML model is shown.');
       $('#llm2-row').hidden = !state.data.llm2?.model;
