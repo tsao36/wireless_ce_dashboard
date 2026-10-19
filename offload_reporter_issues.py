@@ -542,6 +542,22 @@ def _resolve_count_filter_expr(columns: set[str], count_profile: str) -> str:
     return _bug_status_custom_open_expr(columns)
 
 
+def _loading_filter_expr(columns: set[str], count_profile: str, table: str) -> str:
+    _validate_table_name(table)
+    conditions = [_resolve_count_filter_expr(columns, count_profile)]
+    if _created_date_expr(columns) != "NULL":
+        conditions.append("created_date >= DATE_TRUNC('year', CURRENT_DATE)")
+    if _has(columns, "jira_id") and _has(columns, "jira_status"):
+        # An IPS-only row must not reopen a Jira that has a known terminal status.
+        conditions.append(
+            "(jira_id IS NULL OR jira_id NOT IN ("
+            f"SELECT TRIM(jira_id::text) FROM {table} "
+            "WHERE NULLIF(NULLIF(TRIM(jira_id::text), ''), 'NA') IS NOT NULL "
+            "AND LOWER(TRIM(jira_status::text)) IN ('closed', 'verify', 'implemented')))"
+        )
+    return " AND ".join(f"({condition})" for condition in conditions)
+
+
 def _base_filter_expr(columns: set[str], jira_id_expr: str, start_date: str, *, include_hsd: bool = True) -> str:
     base = "TRUE"
     created_filter = _created_date_filter_expr(columns, start_date)
@@ -694,11 +710,7 @@ def _get_reporter_current_counts(
     else:
         num_jira = "0"
 
-    base_filter = _resolve_count_filter_expr(columns, count_profile)
-
-    # Only count issues created in the current calendar year
-    if created_expr != "NULL":
-        base_filter = f"({base_filter}) AND (created_date >= DATE_TRUNC('year', CURRENT_DATE))"
+    base_filter = _loading_filter_expr(columns, count_profile, table)
 
     owner_match = "TRUE"
     hsd_presence_expr = "''"
@@ -985,12 +997,7 @@ def _get_reporter_current_breakdown(
     else:
         num_jira = "0"
 
-    base_filter = _resolve_count_filter_expr(columns, count_profile)
-
-    # Only count issues created in the current calendar year
-    _breakdown_created_expr = _created_date_expr(columns)
-    if _breakdown_created_expr != "NULL":
-        base_filter = f"({base_filter}) AND (created_date >= DATE_TRUNC('year', CURRENT_DATE))"
+    base_filter = _loading_filter_expr(columns, count_profile, table)
 
     owner_match = "TRUE"
     hsd_presence_expr = "''"
@@ -2453,7 +2460,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             SELECT *
             FROM base
             WHERE {_normalized_filter_expr(ips_case_num_expr, jira_id_expr)}
-              AND {_resolve_count_filter_expr(columns, count_profile)}
+              AND {_loading_filter_expr(columns, count_profile, table)}
         )
                 {final_select}
                 ORDER BY reporter, issue_key;
@@ -2502,38 +2509,13 @@ def _build_weighted_summary(
     if not weight_rows:
         return {}, [], {}
 
-    active_limits: Dict[str, Tuple[int, int]] = {}
-    for breakdown_row in breakdown_rows:
-        reporter = _normalize_reporter(str(breakdown_row.get("reporter") or ""))
-        if not reporter:
-            continue
-        raw_uips = int(breakdown_row.get("num_unpromoted_ips") or 0)
-        stale_ips = int(breakdown_row.get("num_stale") or 0)
-        close_pending = int(breakdown_row.get("num_close_pending") or 0)
-        active_limits[reporter] = (
-            max(0, raw_uips - stale_ips - close_pending),
-            int(breakdown_row.get("num_jira") or 0),
-        )
-
-    active_candidates = [
+    active_weight_rows = [
         row
         for row in weight_rows
         if str(row.get("source_type") or "").lower() in {"valid_ips", "jira"}
         and not bool(row.get("is_stale")) and not bool(row.get("is_close_pending"))
     ]
     active_hsd_rows = [row for row in weight_rows if str(row.get("source_type") or "").lower() == "hsd"]
-    active_weight_rows: List[Dict[str, Any]] = []
-    grouped_candidates: Dict[str, List[Dict[str, Any]]] = {}
-    for row in active_candidates:
-        reporter = _normalize_reporter(str(row.get("reporter") or ""))
-        if reporter:
-            grouped_candidates.setdefault(reporter, []).append(row)
-    for reporter, candidates in grouped_candidates.items():
-        active_ips_limit, jira_limit = active_limits.get(reporter, (0, 0))
-        jira_rows = [row for row in candidates if str(row.get("source_type") or "").lower() == "jira"]
-        ips_rows = [row for row in candidates if str(row.get("source_type") or "").lower() != "jira"]
-        active_weight_rows.extend(jira_rows[:jira_limit])
-        active_weight_rows.extend(ips_rows[:active_ips_limit])
     classified = classify_and_weight_rows(
         active_weight_rows,
         model_bundle=model_bundle,

@@ -100,6 +100,10 @@ The activity view reads `CFE work overview.xlsx` from the project root. Replace 
 
 To refresh the team-loading snapshot without sending notifications or changing offload history, run `python offload_reporter_issues.py --snapshot-only`. Each run also appends the engineer issue lists to `issue history/YYYY-Www.json` for the corresponding ISO week; the loading page uses the latest snapshot when a member name is opened.
 
+Loading counts, issue details, and category weights use the same current-calendar-year and open-status eligibility rules. An IPS-only row cannot make a linked Jira active when another database record for that Jira is Closed, Verify, or Implemented. Eligible issues are selected by these rules, not by truncating an all-years issue list to match the count.
+
+Read-only PostgreSQL regression tests use in-query fixtures without changing database records. In PowerShell, run `$env:RUN_LOADING_DB_TESTS='1'; python -m unittest discover -s tests -p test_loading_eligibility.py` with the project environment and database connectivity available.
+
 While the dashboard server is running, it starts a snapshot-only refresh at startup and every 10 minutes, even with no browser open. Automatic refreshes share the manual batch lock and skip a tick if a batch is still running. Output is appended to `logs/loading_auto_refresh.log`; launch failures are retried on the next tick. This reads the database without updating it, sending notifications, or changing offload history. Existing browser tabs still need a page refresh to display the newly saved snapshot. Restart the server after upgrading to enable the timer; no separate Scheduled Task is required for the refresh loop.
 
 The source workbook is excluded from Git because it contains internal team data. The Python API binds to loopback for the IIS reverse-proxy setup in `web.config`; the IIS site itself must remain restricted to the intended internal network because the dashboard does not require individual sign-in.
