@@ -219,6 +219,7 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script>
     const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8010' : '';
+    const HSD_BASE_URL = 'https://hsdes.intel.com/appstore/article-one/#/';
         const IS_V2_LOADING_TEST = new URLSearchParams(window.location.search).get('source') === 'v2';
         if (IS_V2_LOADING_TEST) {
           document.title = 'Wireless CE Team Loading v2 Test';
@@ -282,6 +283,7 @@
             const identifier = `${label} ${value}`;
             const jiraKey = String(value);
             const jiraBaseUrl = String(currentSnapshot.jira_base_url || 'https://jira.idoc.intel.com').replace(/\/+$/, '');
+            if (label === 'HSD' && /^\d+$/.test(String(value))) return `<a href="${HSD_BASE_URL}${encodeURIComponent(String(value))}" target="_blank" rel="noopener noreferrer">${esc(identifier)}</a>`;
             if (label !== 'Jira' || !/^[A-Z][A-Z0-9_]*-\d+$/.test(jiraKey) || !/^https:\/\/[^/]+/i.test(jiraBaseUrl)) return esc(identifier);
             return `<a href="${esc(`${jiraBaseUrl}/browse/${encodeURIComponent(jiraKey)}`)}" target="_blank" rel="noopener noreferrer">${esc(identifier)}</a>`;
           }).join(' · ');
