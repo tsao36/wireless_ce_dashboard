@@ -75,6 +75,7 @@
     .issue-table td.issue-date,.issue-table td.issue-category { overflow-wrap:anywhere; }
     .issue-table td.issue-date { font-variant-numeric:tabular-nums; }
     .issue-identifiers { display:block; margin-top:4px; color:var(--muted); font-size:11px; overflow-wrap:anywhere; }
+    .issue-identifiers a { color:var(--accent); font-weight:700; text-decoration:underline; text-underline-offset:2px; }
     .issue-weight { display:block; margin-top:4px; color:var(--muted); font-size:11px; }
     .detail-meta { display:flex; flex-wrap:wrap; gap:8px 20px; margin-bottom:14px; color:var(--muted); font-size:12px; }
     .detail-meta strong { color:var(--ink); }
@@ -277,9 +278,15 @@
         const issueDetails = Array.isArray(row.issue_details) ? row.issue_details : null;
         const issueRows = (issueDetails || []).map(issue => {
           const category = String(issue.category || (issue.source_type === 'hsd' ? 'HSD (not categorized)' : 'Uncategorized'));
-          const identifiers = [['IPS', issue.ips_case_number], ['HSD', issue.hsd_id], ['Jira', issue.jira_id]].filter(([, value]) => value).map(([label, value]) => `${label} ${value}`).join(' · ');
+          const identifiers = [['IPS', issue.ips_case_number], ['HSD', issue.hsd_id], ['Jira', issue.jira_id]].filter(([, value]) => value).map(([label, value]) => {
+            const identifier = `${label} ${value}`;
+            const jiraKey = String(value);
+            const jiraBaseUrl = String(currentSnapshot.jira_base_url || '').replace(/\/+$/, '');
+            if (label !== 'Jira' || !/^[A-Z][A-Z0-9_]*-\d+$/.test(jiraKey) || !/^https:\/\/[^/]+/i.test(jiraBaseUrl)) return esc(identifier);
+            return `<a href="${esc(`${jiraBaseUrl}/browse/${encodeURIComponent(jiraKey)}`)}" target="_blank" rel="noopener noreferrer">${esc(identifier)}</a>`;
+          }).join(' · ');
           const weight = issue.issue_weight == null ? 'Weight not saved' : `Weight ${weightNumber(issue.issue_weight)}`;
-          return `<tr><td>${esc(({ valid_ips: 'IPS', hsd: 'HSD', jira: 'Jira' })[issue.source_type] || 'Issue')}</td><td class="issue-title">${esc(issue.ips_title || '-')}<span class="issue-identifiers">${esc(identifiers || 'No issue ID')}</span></td><td class="issue-category">${esc(category)}<span class="issue-weight">${weight}</span></td><td class="issue-date">${esc(issue.created || '-')}</td></tr>`;
+          return `<tr><td>${esc(({ valid_ips: 'IPS', hsd: 'HSD', jira: 'Jira' })[issue.source_type] || 'Issue')}</td><td class="issue-title">${esc(issue.ips_title || '-')}<span class="issue-identifiers">${identifiers || 'No issue ID'}</span></td><td class="issue-category">${esc(category)}<span class="issue-weight">${weight}</span></td><td class="issue-date">${esc(issue.created || '-')}</td></tr>`;
         }).join('');
         const issueMarkup = issueDetails === null
           ? '<p class="issue-empty">Issue-level details were not saved in this snapshot. Select a newer snapshot generated with issue details enabled.</p>'

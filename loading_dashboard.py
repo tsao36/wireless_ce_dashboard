@@ -508,6 +508,7 @@ def _load_test_team_loading() -> dict:
         "available": True,
         "selected_date": "latest",
         "source_table": table_name,
+        "jira_base_url": Sherlock.Jira.server.rstrip("/"),
     }
 
 
@@ -1212,6 +1213,7 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
             "available": False,
             "selected_date": selected_date,
             "message": "No batch result is available yet. Run the daily loading batch first.",
+            "jira_base_url": Sherlock.Jira.server.rstrip("/"),
         }
         snapshot = self._read_snapshot(selected_date)
         if snapshot is not None:
