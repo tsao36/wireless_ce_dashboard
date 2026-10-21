@@ -79,6 +79,7 @@ RUN_RETURN_CODE: int | None = None
 LOADING_REFRESH_SECONDS = 600
 FIELD_ISSUE_TABLE = "ips_jira_bugs"
 FIELD_ISSUE_KEYWORD = "field issue"
+TEAM_LOADING_TEST_TABLE = "ips_jira_bugs_v2"
 FIELD_ISSUE_DETAIL_COLUMNS = (
     "ips_case_number",
     "ips_title",
@@ -459,6 +460,54 @@ def _load_field_issues() -> dict:
         "year": CURRENT_YEAR,
         "loaded_at": datetime.now().isoformat(timespec="seconds"),
         "issues": issues,
+    }
+
+
+def _load_test_team_loading() -> dict:
+    from offload_reporter_issues import (
+        DbConnector,
+        _build_combined_trial_table_data,
+        _build_weighted_summary,
+        _get_reporter_current_breakdown,
+        _load_weight_category_display_order,
+        _validate_table_name,
+    )
+
+    table_name = TEAM_LOADING_TEST_TABLE
+    _validate_table_name(table_name)
+    db = DbConnector()
+    try:
+        stale_days = int(os.environ.get("STALE_DAYS", "90"))
+        breakdown = _get_reporter_current_breakdown(db, table_name, stale_days, filter_allowed=True)
+        weighted_summary: dict = {}
+        weighted_category_rows: list = []
+        issue_details_by_reporter: dict = {}
+        if breakdown:
+            weighted_summary, weighted_category_rows, issue_details_by_reporter = _build_weighted_summary(
+                db,
+                table_name,
+                breakdown,
+                model_path=str(ROOT / "models" / "issue_category_model.joblib"),
+                weight_map_path=str(WEIGHT_MAP_PATH),
+            )
+        category_order = _load_weight_category_display_order(str(WEIGHT_MAP_PATH))
+        categories, rows = _build_combined_trial_table_data(
+            breakdown,
+            weighted_summary,
+            weighted_category_rows,
+            preferred_categories=category_order,
+            issue_details_by_reporter=issue_details_by_reporter,
+        )
+    finally:
+        db.__del__()
+
+    return {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "categories": categories,
+        "rows": rows,
+        "available": True,
+        "selected_date": "latest",
+        "source_table": table_name,
     }
 
 
@@ -1034,6 +1083,9 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/field-issues":
             self._send_field_issues()
             return
+        if parsed.path == "/api/loading-v2":
+            self._send_test_team_loading()
+            return
         if parsed.path == "/api/category-prediction":
             self._send_category_prediction()
             return
@@ -1209,6 +1261,15 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             self._send_json(
                 {"issues": [], "message": f"Unable to query {FIELD_ISSUE_TABLE} ({type(exc).__name__})."},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
+    def _send_test_team_loading(self) -> None:
+        try:
+            self._send_json(_load_test_team_loading())
+        except Exception as exc:
+            self._send_json(
+                {"available": False, "rows": [], "message": f"Unable to query {TEAM_LOADING_TEST_TABLE} ({type(exc).__name__})."},
                 HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 

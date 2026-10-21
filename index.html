@@ -101,6 +101,7 @@
     .footnote { margin:14px 0 0; color:#FAF9F3; font:12px "Segoe UI",Tahoma,sans-serif; }
     .error { color:var(--danger) !important; font-weight:700; }
     .view-switch { display:flex; gap:4px; margin:0 0 16px; border-bottom:1px solid rgba(250,249,243,.45); }
+    .view-switch[hidden],.toolbar label[hidden] { display:none; }
     .view-tab { min-height:42px; padding:9px 16px; border:0; border-bottom:3px solid transparent; color:#FAF9F3; background:transparent; font:700 14px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
     .view-tab[aria-selected="true"] { color:var(--ink); background:var(--surface); border-bottom-color:var(--accent); }
     .view-tab:focus-visible { outline:3px solid #FAF9F3; outline-offset:2px; }
@@ -189,7 +190,7 @@
 </head>
 <body>
   <main>
-    <header class="masthead"><div><h1>Wireless CE Team Dashboard</h1><p class="subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button><button class="run-batch" type="button" id="restart-server">Restart server</button></div></header>
+    <header class="masthead"><div><h1 id="dashboard-title">Wireless CE Team Dashboard</h1><p class="subtitle" id="dashboard-subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" id="v2-loading-link" href="index.html?source=v2" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Team loading v2 test</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button><button class="run-batch" type="button" id="restart-server">Restart server</button></div></header>
     <div class="view-switch" role="tablist" aria-label="Dashboard views">
       <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="false" aria-controls="activity-view" tabindex="-1">Team activity</button>
       <button class="view-tab" id="loading-tab" type="button" role="tab" aria-selected="true" aria-controls="loading-view">Team loading</button>
@@ -208,7 +209,7 @@
     </section>
     <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab">
     <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
-    <section class="panel"><div class="panel-head"><h2>Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody><tfoot id="table-foot"></tfoot></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
+    <section class="panel"><div class="panel-head"><h2 id="loading-title">Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody><tfoot id="table-foot"></tfoot></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
       <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
     </section>
   </main>
@@ -217,6 +218,22 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script>
     const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8010' : '';
+        const IS_V2_LOADING_TEST = new URLSearchParams(window.location.search).get('source') === 'v2';
+        if (IS_V2_LOADING_TEST) {
+          document.title = 'Wireless CE Team Loading v2 Test';
+          document.querySelector('#dashboard-title').textContent = 'Wireless CE Team Loading v2 Test';
+          document.querySelector('#loading-title').textContent = 'Weighted team loading v2';
+          document.querySelector('#dashboard-subtitle').textContent = 'Live weighted loading from ips_jira_bugs_v2';
+          document.querySelector('#v2-loading-link').href = 'index.html';
+          document.querySelector('#v2-loading-link').textContent = 'Production team loading';
+          document.querySelector('#activity-tab').hidden = true;
+          document.querySelector('#activity-view').hidden = true;
+          document.querySelector('.view-switch').hidden = true;
+          document.querySelector('#date-filter').closest('label').hidden = true;
+          document.querySelector('#run-batch').textContent = 'Refresh v2 data';
+          document.querySelector('#restart-server').hidden = true;
+          document.querySelector('.footnote').textContent = 'Test view reads ips_jira_bugs_v2 directly and does not write the production loading snapshots.';
+        }
     const money = value => Number(value || 0).toFixed(2);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const weightNumber = value => Number(value || 0).toFixed(2);
@@ -333,7 +350,8 @@
             document.querySelector('#loading-view').hidden = activity;
             if (activity && !currentActivity.sheets.length) loadActivity();
           }
-          async function loadDates() {
+            async function loadDates() {
+          if (IS_V2_LOADING_TEST) return;
       const response = await fetch(`${API_BASE}/api/dates`, { cache: 'no-store' }); if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const dates = await response.json(); const select = document.querySelector('#date-filter'); const selectedDate = select.value; select.innerHTML = '<option value="latest">Latest</option>';
       dates.dates.forEach(date => { const option = document.createElement('option'); option.value = date; option.textContent = date; select.appendChild(option); });
@@ -342,11 +360,11 @@
     async function loadSnapshot() {
       const status = document.querySelector('#status'); const empty = document.querySelector('#empty'); status.textContent = 'Loading...';
       try {
-        await loadDates(); const date = document.querySelector('#date-filter').value; const response = await fetch(`${API_BASE}/api/loading?date=${encodeURIComponent(date)}`, { cache: 'no-store' }); if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        currentSnapshot = await response.json(); currentSnapshot.rows = Array.isArray(currentSnapshot.rows) ? currentSnapshot.rows : []; currentSnapshot.categories = Array.isArray(currentSnapshot.categories) ? currentSnapshot.categories : [];
+        await loadDates(); const date = document.querySelector('#date-filter').value; const endpoint = IS_V2_LOADING_TEST ? '/api/loading-v2' : `/api/loading?date=${encodeURIComponent(date)}`; const response = await fetch(`${API_BASE}${endpoint}`, { cache: 'no-store' }); if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        currentSnapshot = await response.json(); if (currentSnapshot.available === false) throw new Error(currentSnapshot.message || 'Source unavailable'); currentSnapshot.rows = Array.isArray(currentSnapshot.rows) ? currentSnapshot.rows : []; currentSnapshot.categories = Array.isArray(currentSnapshot.categories) ? currentSnapshot.categories : [];
         document.querySelector('#updated').textContent = currentSnapshot.generated_at ? new Date(currentSnapshot.generated_at).toLocaleString() : '-';
         const categorySelect = document.querySelector('#category-filter'); const selectedCategory = categorySelect.value || savedViewState.category || ''; categorySelect.innerHTML = '<option value="">All categories</option>'; currentSnapshot.categories.forEach(category => { const option = document.createElement('option'); option.value = category; option.textContent = category; categorySelect.appendChild(option); }); categorySelect.value = currentSnapshot.categories.includes(selectedCategory) ? selectedCategory : ''; saveViewState();
-        renderSnapshot(); status.textContent = currentSnapshot.available ? (date === 'latest' ? 'Latest snapshot' : `Snapshot ${date}`) : 'Waiting for batch result'; status.classList.remove('error');
+        renderSnapshot(); status.textContent = IS_V2_LOADING_TEST ? `Live test source: ${currentSnapshot.source_table || 'ips_jira_bugs_v2'}` : (currentSnapshot.available ? (date === 'latest' ? 'Latest snapshot' : `Snapshot ${date}`) : 'Waiting for batch result'); status.classList.remove('error');
       } catch (error) {
         status.classList.add('error');
         if (currentSnapshot.rows.length) { status.textContent = 'Update failed - showing previous snapshot'; showToast(`Unable to update loading: ${error.message}`); }
@@ -420,6 +438,16 @@
       return response.json();
     }
     async function runBatch() {
+      if (IS_V2_LOADING_TEST) {
+        runButton.disabled = true; runButton.textContent = 'Refreshing v2 data...';
+        try {
+          await loadSnapshot();
+          const status = document.querySelector('#status');
+          showToast(status.classList.contains('error') ? `V2 refresh failed: ${status.textContent}` : 'V2 test data refreshed. Production snapshots were not changed.');
+        }
+        finally { runButton.disabled = false; runButton.textContent = 'Refresh v2 data'; }
+        return;
+      }
       runButton.disabled = true; runButton.textContent = 'Starting daily loading...';
       try {
         const response = await fetch(`${API_BASE}/api/run-batch`, { method: 'POST' });
@@ -504,7 +532,7 @@
     document.querySelectorAll('dialog').forEach(modal => modal.addEventListener('click', event => { if (event.target === event.currentTarget) event.currentTarget.close(); }));
     document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelectorAll('dialog[open]').forEach(modal => modal.close()); });
     loadSnapshot();
-    loadActivity();
+    if (!IS_V2_LOADING_TEST) loadActivity();
   </script>
 </body>
 </html>

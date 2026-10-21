@@ -3,6 +3,11 @@ setlocal
 
 cd /d "%~dp0"
 
+for %%I in ("%~dp0.") do set "WIRELESS_CE_DASHBOARD_ROOT=%%~fI"
+for %%I in ("%~dp0..\category_tuning") do set "CATEGORY_TUNING_DIR=%%~fI"
+if not defined OFFLOAD_HYBRID_LLM_MIN_CONFIDENCE set "OFFLOAD_HYBRID_LLM_MIN_CONFIDENCE=0.90"
+set "SSL_CERT_FILE=C:\ProgramData\Wirelessce\certs\intel-ca-bundle.pem"
+
 set "LOG_DIR=%~dp0logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
 
