@@ -52,7 +52,7 @@ Ensure `.env` contains valid DB and Graph API credentials:
 - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`
 - `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `GRAPH_CLIENT_SECRET`, `GRAPH_SENDER_UPN`
 
-The Jira integration now requires the organization-provided Cloud base URL in `JIRA_CLOUD_SERVER`; it no longer defaults to the retired Data Center host. Existing connector credentials are still read from `JIRA_USER` and `JIRA_PASSWORD`. Confirm the required Cloud authentication procedure with the internal Jira automation runbook before configuring those credentials.
+The Jira Cloud base URL defaults to `https://jira.idoc.intel.com`. For example, the issue `WIFI-335395` opens at `https://jira.idoc.intel.com/browse/WIFI-335395`. Set `JIRA_CLOUD_SERVER` to override the base URL; use only the host/base path, without `/browse/<issue-key>`. The retired Data Center host is not used. Existing connector credentials are still read from `JIRA_USER` and `JIRA_PASSWORD`. Confirm the required Cloud authentication procedure with the internal Jira automation runbook before configuring those credentials.
 ---
 
 ## 🏃 Running the Automation

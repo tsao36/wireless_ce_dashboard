@@ -281,7 +281,7 @@
           const identifiers = [['IPS', issue.ips_case_number], ['HSD', issue.hsd_id], ['Jira', issue.jira_id]].filter(([, value]) => value).map(([label, value]) => {
             const identifier = `${label} ${value}`;
             const jiraKey = String(value);
-            const jiraBaseUrl = String(currentSnapshot.jira_base_url || '').replace(/\/+$/, '');
+            const jiraBaseUrl = String(currentSnapshot.jira_base_url || 'https://jira.idoc.intel.com').replace(/\/+$/, '');
             if (label !== 'Jira' || !/^[A-Z][A-Z0-9_]*-\d+$/.test(jiraKey) || !/^https:\/\/[^/]+/i.test(jiraBaseUrl)) return esc(identifier);
             return `<a href="${esc(`${jiraBaseUrl}/browse/${encodeURIComponent(jiraKey)}`)}" target="_blank" rel="noopener noreferrer">${esc(identifier)}</a>`;
           }).join(' · ');
