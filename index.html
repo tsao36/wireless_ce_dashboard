@@ -191,7 +191,7 @@
 </head>
 <body>
   <main>
-    <header class="masthead"><div><h1 id="dashboard-title">Wireless CE Team Dashboard</h1><p class="subtitle" id="dashboard-subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" id="v2-loading-link" href="index.html?source=v2" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Team loading v2 test</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button><button class="run-batch" type="button" id="restart-server">Restart server</button></div></header>
+    <header class="masthead"><div><h1 id="dashboard-title">Wireless CE Team Dashboard</h1><p class="subtitle" id="dashboard-subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" id="v2-loading-link" href="index.html?source=production" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Production team loading</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button><button class="run-batch" type="button" id="restart-server">Restart server</button></div></header>
     <div class="view-switch" role="tablist" aria-label="Dashboard views">
       <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="false" aria-controls="activity-view" tabindex="-1">Team activity</button>
       <button class="view-tab" id="loading-tab" type="button" role="tab" aria-selected="true" aria-controls="loading-view">Team loading</button>
@@ -220,14 +220,15 @@
   <script>
     const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8010' : '';
     const HSD_BASE_URL = 'https://hsdes.intel.com/appstore/article-one/#/';
-        const IS_V2_LOADING_TEST = new URLSearchParams(window.location.search).get('source') === 'v2';
+        const IS_V2_LOADING_TEST = new URLSearchParams(window.location.search).get('source') !== 'production';
+        const loadingVersionLink = document.querySelector('#v2-loading-link');
+        loadingVersionLink.href = IS_V2_LOADING_TEST ? 'index.html?source=production' : 'index.html';
+        loadingVersionLink.textContent = IS_V2_LOADING_TEST ? 'Production team loading' : 'Weighted team loading v2';
         if (IS_V2_LOADING_TEST) {
-          document.title = 'Wireless CE Team Loading v2 Test';
-          document.querySelector('#dashboard-title').textContent = 'Wireless CE Team Loading v2 Test';
+          document.title = 'Wireless CE Team Loading v2';
+          document.querySelector('#dashboard-title').textContent = 'Wireless CE Team Loading v2';
           document.querySelector('#loading-title').textContent = 'Weighted team loading v2';
           document.querySelector('#dashboard-subtitle').textContent = 'Live weighted loading from ips_jira_bugs_v2';
-          document.querySelector('#v2-loading-link').href = 'index.html';
-          document.querySelector('#v2-loading-link').textContent = 'Production team loading';
           document.querySelector('#activity-tab').hidden = true;
           document.querySelector('#activity-view').hidden = true;
           document.querySelector('.view-switch').hidden = true;

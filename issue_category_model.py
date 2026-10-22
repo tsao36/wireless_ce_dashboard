@@ -663,6 +663,8 @@ _LEGACY_CATEGORY_MAP: Dict[str, str] = {
     "not wireless": "Need-Triage",
     "unknown": "Need-Triage",
     "needs-triage": "Need-Triage",
+    "layout": "Need-Triage",
+    "schematic": "Need-Triage",
 }
 
 

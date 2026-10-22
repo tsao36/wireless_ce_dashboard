@@ -102,6 +102,32 @@ class LoadingEligibilityTests(unittest.TestCase):
         )
         self.assertEqual([row["jira_id"] for row in details], ["WOT-LINKED"])
 
+    def test_ips_with_jira_id_counts_only_as_jira_when_promotion_failed(self):
+        self.add_row(
+            ips_case_number=123,
+            ips_jira_id="WIFI-123",
+            ips_jira_promo_status="Failed",
+            ips_status="New",
+            ips_created_date=self.current,
+            jira_id="WIFI-123",
+            jira_status="Open",
+            jira_created_date=self.current,
+        )
+
+        breakdown = offload._get_reporter_current_breakdown(self, "fixture", 21)
+        details = offload._get_unpromoted_ips_rows_for_weighting(
+            self, "fixture", include_jira=True,
+        )
+        counts = offload._get_reporter_current_counts(self, "fixture", 21)
+
+        self.assertEqual(breakdown[0]["num_unpromoted_ips"], 0)
+        self.assertEqual(breakdown[0]["num_jira"], 1)
+        self.assertEqual(
+            [(row["source_type"], row["jira_id"]) for row in details],
+            [("jira", "WIFI-123")],
+        )
+        self.assertEqual(counts[0]["total_current_issue_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

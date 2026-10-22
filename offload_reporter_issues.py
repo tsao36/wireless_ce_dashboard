@@ -442,6 +442,11 @@ def _jira_key_expr(columns: set[str]) -> str:
     return "COALESCE(" + ", ".join(jira_parts) + ")"
 
 
+def _ips_without_jira_link_expr(columns: set[str]) -> str:
+    jira_key_expr = _jira_key_expr(columns)
+    return f"({jira_key_expr}) IS NULL" if jira_key_expr != "NULL" else "TRUE"
+
+
 def _get_table_columns(db: DbConnector, table: str) -> set[str]:
     schema, name = _split_table(table)
     query = """
@@ -682,6 +687,7 @@ def _get_reporter_current_counts(
     else:
         unpromoted_ips_cond = f"{ips_case_valid_cond} AND {not_closed_cond}"
         promoted_ips_cond = "FALSE"
+    unpromoted_ips_cond = f"({unpromoted_ips_cond}) AND ({_ips_without_jira_link_expr(columns)})"
     # Close-pending is excluded from loading entirely.
     if ips_sub_status_expr:
         counted_unpromoted_ips_cond = f"({unpromoted_ips_cond}) AND ({ips_sub_status_expr} <> 'close-pending')"
@@ -969,6 +975,7 @@ def _get_reporter_current_breakdown(
     else:
         unpromoted_ips_cond = f"{ips_case_valid_cond} AND {not_closed_cond}"
         promoted_ips_cond = "FALSE"
+    unpromoted_ips_cond = f"({unpromoted_ips_cond}) AND ({_ips_without_jira_link_expr(columns)})"
     # Close-pending is excluded from loading entirely.
     if ips_sub_status_expr:
         counted_unpromoted_ips_cond = f"({unpromoted_ips_cond}) AND ({ips_sub_status_expr} <> 'close-pending')"
@@ -2207,6 +2214,7 @@ def _get_unpromoted_ips_rows_for_weighting(
         unpromoted_ips_cond = f"{ips_case_valid_cond} AND ips_jira_id IS NULL AND {not_closed_cond}"
     else:
         unpromoted_ips_cond = f"{ips_case_valid_cond} AND {not_closed_cond}"
+    unpromoted_ips_cond = f"({unpromoted_ips_cond}) AND ({_ips_without_jira_link_expr(columns)})"
 
     if ips_sub_status_expr:
         close_pending_cond = f"{ips_sub_status_expr} = 'close-pending'"
