@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Wireless CE Team Dashboard</title>
+  <title>Wireless CE Team Dashboard v2</title>
   <style>
     :root { color-scheme: light; --ink:#151C27; --muted:#44555F; --surface:#FAF9F3; --line:#7686A3; --accent:#BC704A; --gold:#BC704A; --deep:#151C27; --danger:#BC704A; }
     * { box-sizing: border-box; }
@@ -230,7 +230,7 @@
 </head>
 <body>
   <main>
-    <header class="masthead"><div><h1 id="dashboard-title">Wireless CE Team Dashboard</h1><p class="subtitle" id="dashboard-subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" id="v2-loading-link" href="index.html?source=production" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Production team loading</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button><button class="run-batch" type="button" id="restart-server">Restart server</button></div></header>
+    <header class="masthead"><div><h1 id="dashboard-title">Wireless CE Team Dashboard v2</h1><p class="subtitle" id="dashboard-subtitle">Live team loading from ips_jira_bugs_v2</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Refresh v2 data</button></div></header>
     <div class="view-switch" role="tablist" aria-label="Dashboard views">
       <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="false" aria-controls="activity-view" tabindex="-1">Team activity</button>
       <button class="view-tab" id="loading-tab" data-view="loading" type="button" role="tab" aria-selected="true" aria-controls="loading-view">Team loading</button>
@@ -286,7 +286,7 @@
     </section>
     <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab">
     <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong><small class="stat-detail" id="top-weighted-engineer">Top loading: -</small></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
-    <section class="panel"><div class="panel-head"><h2 id="loading-title">Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="active_uips">Active IPS</option><option value="active_hsd">Active HSD</option><option value="jira">Jira</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table class="sortable-table"><thead id="table-head"></thead><tbody id="table-body"></tbody><tfoot id="table-foot"></tfoot></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
+    <section class="panel"><div class="panel-head"><h2 id="loading-title">Weighted team loading v2</h2><span id="status">Loading...</span></div><div class="toolbar"><label hidden>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="active_uips">Active IPS</option><option value="active_hsd">Active HSD</option><option value="jira">Jira</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table class="sortable-table"><thead id="table-head"></thead><tbody id="table-body"></tbody><tfoot id="table-foot"></tfoot></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
       <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
     </section>
   </main>
@@ -296,20 +296,6 @@
   <script>
     const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8010' : '';
     const HSD_BASE_URL = 'https://hsdes.intel.com/appstore/article-one/#/';
-        const IS_V2_LOADING_TEST = new URLSearchParams(window.location.search).get('source') !== 'production';
-        const loadingVersionLink = document.querySelector('#v2-loading-link');
-        loadingVersionLink.href = IS_V2_LOADING_TEST ? 'index.html?source=production' : 'index.html';
-        loadingVersionLink.textContent = IS_V2_LOADING_TEST ? 'Production team loading' : 'Weighted team loading v2';
-        if (IS_V2_LOADING_TEST) {
-          document.title = 'Wireless CE Team Loading v2';
-          document.querySelector('#dashboard-title').textContent = 'Wireless CE Team Loading v2';
-          document.querySelector('#loading-title').textContent = 'Weighted team loading v2';
-          document.querySelector('#dashboard-subtitle').textContent = 'Live weighted loading from ips_jira_bugs_v2';
-          document.querySelector('#date-filter').closest('label').hidden = true;
-          document.querySelector('#run-batch').textContent = 'Refresh v2 data';
-          document.querySelector('#restart-server').hidden = true;
-          document.querySelector('.footnote').textContent = 'Test view reads ips_jira_bugs_v2 directly and does not write the production loading snapshots.';
-        }
     const money = value => Number(value || 0).toFixed(2);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     const weightNumber = value => Number(value || 0).toFixed(2);
@@ -652,7 +638,7 @@
             const status = document.querySelector('#yearly-status');
             status.classList.remove('error'); status.textContent = 'Loading yearly issue data...';
             try {
-              const params = new URLSearchParams({ source: IS_V2_LOADING_TEST ? 'ips_jira_bugs_v2' : 'ips_jira_bugs' });
+              const params = new URLSearchParams({ source: 'ips_jira_bugs_v2' });
               if (year) params.set('year', year);
               const suffix = `?${params.toString()}`;
               const response = await fetch(`${API_BASE}/api/yearly-issues${suffix}`, { cache: 'no-store' });
@@ -705,21 +691,14 @@
             if ((view === 'yearly' || turnaround) && !yearlyLoaded) loadYearlyIssues();
             if (turnaround && yearlyLoaded) renderTurnaround();
           }
-            async function loadDates() {
-          if (IS_V2_LOADING_TEST) return;
-      const response = await fetch(`${API_BASE}/api/dates`, { cache: 'no-store' }); if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const dates = await response.json(); const select = document.querySelector('#date-filter'); const selectedDate = select.value; select.innerHTML = '<option value="latest">Latest</option>';
-      dates.dates.forEach(date => { const option = document.createElement('option'); option.value = date; option.textContent = date; select.appendChild(option); });
-      select.value = dates.dates.includes(selectedDate) ? selectedDate : 'latest';
-    }
     async function loadSnapshot() {
       const status = document.querySelector('#status'); const empty = document.querySelector('#empty'); status.textContent = 'Loading...';
       try {
-        await loadDates(); const date = document.querySelector('#date-filter').value; const endpoint = IS_V2_LOADING_TEST ? '/api/loading-v2' : `/api/loading?date=${encodeURIComponent(date)}`; const response = await fetch(`${API_BASE}${endpoint}`, { cache: 'no-store' }); if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const response = await fetch(`${API_BASE}/api/loading-v2`, { cache: 'no-store' }); if (!response.ok) throw new Error(`HTTP ${response.status}`);
         currentSnapshot = await response.json(); if (currentSnapshot.available === false) throw new Error(currentSnapshot.message || 'Source unavailable'); currentSnapshot.rows = Array.isArray(currentSnapshot.rows) ? currentSnapshot.rows : []; currentSnapshot.categories = Array.isArray(currentSnapshot.categories) ? currentSnapshot.categories : [];
         document.querySelector('#updated').textContent = currentSnapshot.generated_at ? new Date(currentSnapshot.generated_at).toLocaleString() : '-';
         const categorySelect = document.querySelector('#category-filter'); const selectedCategory = categorySelect.value || savedViewState.category || ''; categorySelect.innerHTML = '<option value="">All categories</option>'; currentSnapshot.categories.forEach(category => { const option = document.createElement('option'); option.value = category; option.textContent = category; categorySelect.appendChild(option); }); categorySelect.value = currentSnapshot.categories.includes(selectedCategory) ? selectedCategory : ''; saveViewState();
-        renderSnapshot(); status.textContent = IS_V2_LOADING_TEST ? `Live test source: ${currentSnapshot.source_table || 'ips_jira_bugs_v2'}` : (currentSnapshot.available ? (date === 'latest' ? 'Latest snapshot' : `Snapshot ${date}`) : 'Waiting for batch result'); status.classList.remove('error');
+        renderSnapshot(); status.textContent = `Live v2 source: ${currentSnapshot.source_table || 'ips_jira_bugs_v2'}`; status.classList.remove('error');
       } catch (error) {
         status.classList.add('error');
         if (currentSnapshot.rows.length) { status.textContent = 'Update failed - showing previous snapshot'; showToast(`Unable to update loading: ${error.message}`); }
@@ -787,52 +766,16 @@
         showToast('This page was added to your browser bookmarks.');
       }
     });
-    async function readBatchStatus() {
-      const response = await fetch(`${API_BASE}/api/batch`, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return response.json();
-    }
     async function runBatch() {
-      if (IS_V2_LOADING_TEST) {
-        runButton.disabled = true; runButton.textContent = 'Refreshing v2 data...';
-        try {
-          await loadSnapshot();
-          const status = document.querySelector('#status');
-          showToast(status.classList.contains('error') ? `V2 refresh failed: ${status.textContent}` : 'V2 test data refreshed. Production snapshots were not changed.');
-        }
-        finally { runButton.disabled = false; runButton.textContent = 'Refresh v2 data'; }
-        return;
+      runButton.disabled = true; runButton.textContent = 'Refreshing v2 data...';
+      try {
+        await loadSnapshot();
+        const status = document.querySelector('#status');
+        showToast(status.classList.contains('error') ? `V2 refresh failed: ${status.textContent}` : 'V2 data refreshed.');
+      } finally {
+        runButton.disabled = false; runButton.textContent = 'Refresh v2 data';
       }
-      runButton.disabled = true; runButton.textContent = 'Starting daily loading...';
-      try {
-        const response = await fetch(`${API_BASE}/api/run-batch`, { method: 'POST' });
-        const result = await response.json();
-        if (!response.ok && response.status !== 409) throw new Error(result.message || `HTTP ${response.status}`);
-        let state = await readBatchStatus();
-        while (state.running) { runButton.textContent = 'Running daily loading...'; await new Promise(resolve => window.setTimeout(resolve, 2000)); state = await readBatchStatus(); }
-        runButton.disabled = false; runButton.textContent = 'Run daily loading';
-        if (state.return_code === 0) { await loadSnapshot(); showToast('Daily loading completed. The dashboard is up to date.'); }
-        else { showToast(`Daily loading ended with code ${state.return_code ?? 'unknown'}.`); }
-      } catch (error) { runButton.disabled = false; runButton.textContent = 'Run daily loading'; showToast(`Unable to run daily loading: ${error.message}`); }
     }
-    const restartButton = document.querySelector('#restart-server');
-    async function restartServer() {
-      if (!window.confirm('Restart the dashboard server? Everyone using the site will lose the connection for about a minute.')) return;
-      restartButton.disabled = true; restartButton.textContent = 'Restarting...';
-      try {
-        const response = await fetch(`${API_BASE}/api/restart`, { method: 'POST' });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
-        showToast('Server is restarting. The page will reload when it is back.');
-        await new Promise(resolve => window.setTimeout(resolve, 8000));
-        for (let attempt = 0; attempt < 30; attempt += 1) {
-          try { if ((await fetch(`${API_BASE}/api/dates`, { cache: 'no-store' })).ok) { window.location.reload(); return; } } catch (error) { /* still restarting */ }
-          await new Promise(resolve => window.setTimeout(resolve, 3000));
-        }
-        throw new Error('the server did not come back within 2 minutes');
-      } catch (error) { restartButton.disabled = false; restartButton.textContent = 'Restart server'; showToast(`Restart failed: ${error.message}`); }
-    }
-    document.querySelector('#date-filter').addEventListener('change', loadSnapshot);
         document.querySelector('#activity-category').addEventListener('change', () => updateActivitySheets());
         document.querySelector('#activity-sheet').addEventListener('change', renderActivitySheet);
         document.querySelector('#activity-search').addEventListener('input', renderActivitySheet);
@@ -921,7 +864,6 @@
     });
     document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
     runButton.addEventListener('click', runBatch);
-    restartButton.addEventListener('click', restartServer);
     document.querySelector('#show-weights').addEventListener('click', showWeights);
     document.querySelector('#close-weights').addEventListener('click', () => document.querySelector('#weights-modal').close());
     document.querySelector('#table-body').addEventListener('click', event => {
@@ -951,7 +893,6 @@
     document.querySelectorAll('dialog').forEach(modal => modal.addEventListener('click', event => { if (event.target === event.currentTarget) event.currentTarget.close(); }));
     document.addEventListener('keydown', event => { if (event.key === 'Escape') document.querySelectorAll('dialog[open]').forEach(modal => modal.close()); });
     loadSnapshot();
-    if (!IS_V2_LOADING_TEST) loadActivity();
   </script>
 </body>
 </html>
