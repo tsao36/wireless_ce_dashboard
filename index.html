@@ -545,7 +545,7 @@
             });
             const groups = [...buckets.entries()].map(([name, rows]) => ({
               name,
-              average: averageField(rows, 'ips_only_tat_hours'),
+              ips_only_tat_hours: averageField(rows, 'ips_only_tat_hours'),
               count: rows.length,
             }));
             const state = turnaroundSortStates.ipsClosure;
@@ -559,8 +559,8 @@
               host.innerHTML = '<div class="tat-empty">No closed, never-promoted IPS issues match the current filters.</div>';
               return;
             }
-            const total = { name: 'Total', average: averageField(records, 'ips_only_tat_hours'), count: records.length };
-            const rowMarkup = row => `<tr><th scope="row">${esc(row.name)}</th><td>${formatTatDuration(row.average)}</td><td>${row.count.toLocaleString()}</td></tr>`;
+            const total = { name: 'Total', ips_only_tat_hours: averageField(records, 'ips_only_tat_hours'), count: records.length };
+            const rowMarkup = row => `<tr><th scope="row">${esc(row.name)}</th><td>${formatTatDuration(row.ips_only_tat_hours)}</td><td>${row.count.toLocaleString()}</td></tr>`;
             host.innerHTML = `<table class="activity-table tat-table"><caption class="sr-only">IPS creation-to-closure average by reporter</caption><thead><tr>${sortHeader('Reporter', 'name', state)}${sortHeader('Average IPS created to closed', 'ips_only_tat_hours', state)}${sortHeader('IPS issue count', 'count', state)}</tr></thead><tbody>${groups.map(rowMarkup).join('')}</tbody><tfoot>${rowMarkup(total)}</tfoot></table>`;
           }
           function renderTurnaroundTable(containerId, groupKey, records) {
