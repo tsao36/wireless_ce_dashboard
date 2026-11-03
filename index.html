@@ -121,8 +121,8 @@
     .activity-table th { position:sticky; top:0; z-index:1; padding:10px 12px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:normal; }
     .yearly-sort-button { display:inline-flex; align-items:center; gap:6px; padding:0; border:0; color:inherit; background:transparent; font:inherit; text-align:left; cursor:pointer; }
     .yearly-sort-button:hover,.yearly-sort-button:focus-visible { color:var(--accent); outline:2px solid currentColor; outline-offset:3px; }
-    .yearly-table th[aria-sort="ascending"] .yearly-sort-button::after,.sortable-table th[aria-sort="ascending"] .yearly-sort-button::after,.tat-table th[aria-sort="ascending"] .yearly-sort-button::after { content:"▲"; font-size:10px; }
-    .yearly-table th[aria-sort="descending"] .yearly-sort-button::after,.sortable-table th[aria-sort="descending"] .yearly-sort-button::after,.tat-table th[aria-sort="descending"] .yearly-sort-button::after { content:"▼"; font-size:10px; }
+    .yearly-table th[aria-sort="ascending"] .yearly-sort-button::after,.sortable-table th[aria-sort="ascending"] .yearly-sort-button::after,.activity-sortable-table th[aria-sort="ascending"] .yearly-sort-button::after,.tat-table th[aria-sort="ascending"] .yearly-sort-button::after { content:"▲"; font-size:10px; }
+    .yearly-table th[aria-sort="descending"] .yearly-sort-button::after,.sortable-table th[aria-sort="descending"] .yearly-sort-button::after,.activity-sortable-table th[aria-sort="descending"] .yearly-sort-button::after,.tat-table th[aria-sort="descending"] .yearly-sort-button::after { content:"▼"; font-size:10px; }
     .activity-table td { min-width:92px; max-width:420px; padding:9px 12px; border-bottom:1px solid #d8dce4; color:var(--ink); text-align:left; vertical-align:top; white-space:pre-wrap; overflow-wrap:anywhere; }
     .activity-table tbody tr:nth-child(even) td { background:#F0F3F5; }
     .activity-table tbody tr:hover td { background:#E8EEF1; }
@@ -246,7 +246,7 @@
         <button class="activity-refresh" type="button" id="activity-refresh">Refresh workbook</button>
       </div>
       <p class="activity-status" id="activity-status" role="status" aria-live="polite">Loading activity workbook...</p>
-      <div class="table-wrap activity-table-wrap" id="activity-table-wrap"><table class="activity-table"><thead id="activity-table-head"></thead><tbody id="activity-table-body"></tbody></table></div>
+      <div class="table-wrap activity-table-wrap" id="activity-table-wrap"><table class="activity-table activity-sortable-table"><thead id="activity-table-head"></thead><tbody id="activity-table-body"></tbody></table></div>
       <div class="activity-empty" id="activity-empty" hidden></div>
     </section>
     <section class="panel yearly-panel" id="yearly-view" role="tabpanel" aria-labelledby="yearly-tab" hidden>
@@ -314,6 +314,9 @@
     document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === currentTeamFilter)); });
     let currentSnapshot = { rows: [], categories: [] };
     let currentActivity = { sheets: [] };
+    const activitySortState = { key: null, direction: 'desc', clickedKey: null };
+    const activityValueCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    let activitySortSheet = '';
     let activityLoading = false;
     let yearlyLoading = false;
     let yearlyLoaded = false;
@@ -346,6 +349,23 @@
       state.key = key;
       state.direction = repeatedClick && state.direction === 'desc' ? 'asc' : 'desc';
       state.clickedKey = key;
+    }
+    function compareActivityValues(left, right) {
+      const leftText = String(left ?? '').trim();
+      const rightText = String(right ?? '').trim();
+      if (!leftText || !rightText) return leftText ? -1 : rightText ? 1 : 0;
+      const leftNumber = Number(leftText);
+      const rightNumber = Number(rightText);
+      const leftIsNumber = leftText !== '' && Number.isFinite(leftNumber);
+      const rightIsNumber = rightText !== '' && Number.isFinite(rightNumber);
+      if (leftIsNumber && rightIsNumber) return leftNumber - rightNumber;
+      const datePattern = /^(?:\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4})(?:[T\s].*)?$/;
+      if (datePattern.test(leftText) && datePattern.test(rightText)) {
+        const leftDate = Date.parse(leftText);
+        const rightDate = Date.parse(rightText);
+        if (Number.isFinite(leftDate) && Number.isFinite(rightDate)) return leftDate - rightDate;
+      }
+      return activityValueCollator.compare(leftText, rightText);
     }
     function renderSnapshot() {
       const rows = currentSnapshot.rows.filter(row => {
@@ -403,8 +423,21 @@
             const sheet = currentActivity.sheets.find(item => item.name === selectedName && (!category || item.category === category));
             const head = document.querySelector('#activity-table-head'); const body = document.querySelector('#activity-table-body'); const empty = document.querySelector('#activity-empty');
             if (!sheet) { head.innerHTML = ''; body.innerHTML = ''; empty.hidden = false; empty.textContent = currentActivity.message || 'No worksheet is available for this area.'; document.querySelector('#activity-record-count').textContent = 'No data'; return; }
+            if (activitySortSheet !== sheet.name) {
+              activitySortSheet = sheet.name;
+              activitySortState.key = null;
+              activitySortState.direction = 'desc';
+              activitySortState.clickedKey = null;
+            }
             const rows = sheet.rows.filter(row => row.row !== 1 && (!search || row.values.map(value => String(value ?? '')).join(' ').toLowerCase().includes(search)));
-            head.innerHTML = `<tr>${sheet.columns.map(column => `<th scope="col">${esc(column.label)}</th>`).join('')}</tr>`;
+            if (activitySortState.key !== null) {
+              const columnIndex = Number(activitySortState.key.slice('activity-'.length));
+              rows.sort((left, right) => {
+                const comparison = compareActivityValues(left.values[columnIndex], right.values[columnIndex]);
+                return activitySortState.direction === 'desc' ? -comparison : comparison;
+              });
+            }
+            head.innerHTML = `<tr>${sheet.columns.map((column, index) => sortHeader(column.label, `activity-${index}`, activitySortState)).join('')}</tr>`;
             body.innerHTML = rows.map(row => `<tr>${row.values.map(value => `<td>${esc(value ?? '')}</td>`).join('')}</tr>`).join('');
             empty.hidden = rows.length > 0; empty.textContent = search ? 'No rows match this search.' : 'This worksheet has no rows for the current year.';
             document.querySelector('#activity-record-count').textContent = `${rows.length} rows · ${sheet.name}`;
@@ -780,6 +813,12 @@
         document.querySelector('#activity-sheet').addEventListener('change', renderActivitySheet);
         document.querySelector('#activity-search').addEventListener('input', renderActivitySheet);
         document.querySelector('#activity-refresh').addEventListener('click', () => loadActivity(true));
+        document.querySelector('#activity-table-head').addEventListener('click', event => {
+          const button = event.target.closest('button[data-sort-key^="activity-"]');
+          if (!button) return;
+          toggleSortState(activitySortState, button.dataset.sortKey);
+          renderActivitySheet();
+        });
         const dashboardTabs = [...document.querySelectorAll('.view-tab')].filter(tab => !tab.hidden);
         dashboardTabs.forEach(tab => {
           tab.addEventListener('click', () => selectDashboardView(tab.dataset.view || 'activity'));
