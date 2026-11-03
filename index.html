@@ -34,6 +34,7 @@
     .stat { min-width:160px; padding:14px 16px; background:rgba(250,249,243,.96); border-top:1px solid var(--gold); border-radius:6px; box-shadow:0 4px 14px rgba(21,28,39,.18); }
     .stat span { display:block; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; text-transform:uppercase; letter-spacing:.08em; }
     .stat strong { display:block; margin-top:4px; font-size:24px; }
+    .stat-detail { display:block; margin-top:4px; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; overflow-wrap:anywhere; }
     .updated-stat { position:relative; padding-right:42px; }
     .weight-button { position:absolute; top:10px; right:10px; width:28px; height:28px; padding:0; border:1px solid var(--line); border-radius:50%; color:var(--ink); background:transparent; font:700 16px "Segoe UI",Tahoma,sans-serif; cursor:pointer; }
     .weight-button:hover,.weight-button:focus-visible { color:var(--ink); background:var(--accent); outline:3px solid rgba(188,112,74,.25); }
@@ -118,9 +119,42 @@
     .activity-table-wrap { max-height:min(68vh,760px); overflow:auto; }
     .activity-table { width:max-content; min-width:100%; border-collapse:collapse; font:13px "Segoe UI",Tahoma,sans-serif; }
     .activity-table th { position:sticky; top:0; z-index:1; padding:10px 12px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:normal; }
+    .yearly-sort-button { display:inline-flex; align-items:center; gap:6px; padding:0; border:0; color:inherit; background:transparent; font:inherit; text-align:left; cursor:pointer; }
+    .yearly-sort-button:hover,.yearly-sort-button:focus-visible { color:var(--accent); outline:2px solid currentColor; outline-offset:3px; }
+    .yearly-table th[aria-sort="ascending"] .yearly-sort-button::after,.sortable-table th[aria-sort="ascending"] .yearly-sort-button::after,.tat-table th[aria-sort="ascending"] .yearly-sort-button::after { content:"▲"; font-size:10px; }
+    .yearly-table th[aria-sort="descending"] .yearly-sort-button::after,.sortable-table th[aria-sort="descending"] .yearly-sort-button::after,.tat-table th[aria-sort="descending"] .yearly-sort-button::after { content:"▼"; font-size:10px; }
     .activity-table td { min-width:92px; max-width:420px; padding:9px 12px; border-bottom:1px solid #d8dce4; color:var(--ink); text-align:left; vertical-align:top; white-space:pre-wrap; overflow-wrap:anywhere; }
     .activity-table tbody tr:nth-child(even) td { background:#F0F3F5; }
     .activity-table tbody tr:hover td { background:#E8EEF1; }
+    .yearly-table-wrap { max-height:min(46vh,520px); overflow:auto; }
+    .yearly-table { min-width:1280px; }
+    .yearly-table th:first-child,.yearly-table td:first-child { position:sticky; left:0; z-index:1; min-width:180px; }
+    .yearly-table th:first-child { z-index:2; }
+    .yearly-table tfoot td { color:#fff; background:#333; font-weight:700; }
+    .yearly-section-title { margin:18px 20px 8px; font-size:16px; }
+    .yearly-note { min-height:20px; margin:0; padding:8px 20px; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; }
+    .yearly-note:empty { display:none; }
+    .tat-toolbar { align-items:end; }
+    .tat-toolbar label { display:flex; flex-direction:column; align-items:stretch; min-width:150px; }
+    .tat-toolbar input,.tat-toolbar select { min-width:150px; }
+    .tat-summary { display:flex; flex-wrap:wrap; gap:10px; padding:14px 20px; }
+    .tat-table-section .tat-summary { padding:8px 0 12px; }
+    .tat-stat { min-width:180px; padding:10px 14px; border-left:3px solid var(--accent); background:#F0F3F5; }
+    .tat-stat span { display:block; color:var(--muted); font-size:12px; }
+    .tat-stat strong { display:block; margin-top:3px; font-size:22px; font-variant-numeric:tabular-nums; }
+    .tat-status { min-height:20px; margin:0; padding:8px 20px; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; }
+    .tat-table-section { padding:14px 20px 22px; border-top:1px solid var(--line); }
+    .tat-table-section h3 { margin:0 0 8px; font-size:16px; }
+    .tat-table-wrap { overflow-x:auto; }
+    .tat-table { width:100%; min-width:960px; }
+    .tat-table td:not(:first-child),.tat-table th:not(:first-child) { text-align:right; }
+    .tat-table tbody td:not(:first-child),.tat-table tfoot td:not(:first-child) { font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .tat-table tbody th { position:static; color:var(--ink); background:transparent; text-align:left; }
+    .tat-table tbody tr:nth-child(even) th { background:#F0F3F5; }
+    .tat-table tbody tr:hover th { background:#E8EEF1; }
+    .tat-table tfoot th { position:static; }
+    .tat-table tfoot td { color:#fff; background:#333; font-weight:700; }
+    .tat-empty { padding:26px 20px; color:var(--muted); text-align:center; }
     .activity-empty { padding:34px 20px; color:var(--muted); text-align:center; }
     dialog { display:flex; flex-direction:column; width:min(700px,calc(100% - 28px)); max-height:84vh; padding:0; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 24px 70px rgba(21,28,39,.4); overflow:hidden; }
     dialog:not([open]) { display:none; }
@@ -173,6 +207,11 @@
       #table-foot .team-total-label { grid-column:2; grid-row:1; text-align:left; }
       #table-foot .team-total-value { grid-column:3; grid-row:1; text-align:right; }
       .weighted-value { min-width:72px; }
+      .yearly-table-wrap { overflow:auto; }
+      .tat-toolbar label { min-width:0; }
+      .tat-toolbar input,.tat-toolbar select { min-width:0; width:100%; }
+      .tat-table-section { padding:14px 12px 18px; }
+      .tat-table-wrap { overflow-x:auto; }
       .detail-row { display:block; }
       .detail-row td { display:block; }
       .detail-content { padding:14px 16px; }
@@ -194,7 +233,9 @@
     <header class="masthead"><div><h1 id="dashboard-title">Wireless CE Team Dashboard</h1><p class="subtitle" id="dashboard-subtitle">Current-year work, schedules, learning, and team operations</p></div><div class="actions"><a class="run-batch" href="field_issues.html" style="text-decoration:none;">Field issues</a><a class="run-batch" id="v2-loading-link" href="index.html?source=production" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">Production team loading</a><a class="run-batch" href="category_prediction.html" style="text-decoration:none;">Category prediction</a><div style="position:relative;"><button class="bookmark-batch" type="button" id="bookmark-page">★ Add to bookmark</button><div class="bookmark-popover" id="bookmark-popover">Press Ctrl+D (or Cmd+D on Mac) to bookmark this page.</div></div><button class="run-batch" type="button" id="run-batch">Run daily loading</button><button class="run-batch" type="button" id="restart-server">Restart server</button></div></header>
     <div class="view-switch" role="tablist" aria-label="Dashboard views">
       <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="false" aria-controls="activity-view" tabindex="-1">Team activity</button>
-      <button class="view-tab" id="loading-tab" type="button" role="tab" aria-selected="true" aria-controls="loading-view">Team loading</button>
+      <button class="view-tab" id="loading-tab" data-view="loading" type="button" role="tab" aria-selected="true" aria-controls="loading-view">Team loading</button>
+      <button class="view-tab" id="yearly-tab" data-view="yearly" type="button" role="tab" aria-selected="false" aria-controls="yearly-view" tabindex="-1">Yearly issues</button>
+      <button class="view-tab" id="turnaround-tab" data-view="turnaround" type="button" role="tab" aria-selected="false" aria-controls="turnaround-view" tabindex="-1">Issue turnaround time</button>
     </div>
     <section class="panel activity-panel" id="activity-view" role="tabpanel" aria-labelledby="activity-tab" hidden>
       <div class="panel-head"><h2>Team activity</h2><span id="activity-record-count">Loading workbook...</span></div>
@@ -208,9 +249,44 @@
       <div class="table-wrap activity-table-wrap" id="activity-table-wrap"><table class="activity-table"><thead id="activity-table-head"></thead><tbody id="activity-table-body"></tbody></table></div>
       <div class="activity-empty" id="activity-empty" hidden></div>
     </section>
+    <section class="panel yearly-panel" id="yearly-view" role="tabpanel" aria-labelledby="yearly-tab" hidden>
+      <div class="panel-head"><h2>Yearly issue dashboard</h2><span id="yearly-status" role="status" aria-live="polite">Select a year to load data.</span></div>
+      <div class="toolbar yearly-toolbar"><label>Created year <select id="yearly-year" aria-label="Select issue creation year"><option value="">Loading years...</option></select></label><label>Sort <select id="yearly-sort-filter"><option value="weighted_loading">Weighted loading</option><option value="total_issue_count">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" id="yearly-team-filter" role="group" aria-label="Filter engineers by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div>
+      <p class="yearly-note" id="yearly-note" role="status" aria-live="polite"></p>
+      <h3 class="yearly-section-title">Team loading by engineer</h3>
+      <div class="table-wrap yearly-table-wrap"><table class="activity-table yearly-table"><thead id="yearly-engineer-head"></thead><tbody id="yearly-engineer-body"></tbody><tfoot id="yearly-engineer-foot"></tfoot></table></div>
+      <h3 class="yearly-section-title">Team loading by customer</h3>
+      <div class="table-wrap yearly-table-wrap"><table class="activity-table yearly-table"><thead id="yearly-customer-head"></thead><tbody id="yearly-customer-body"></tbody><tfoot id="yearly-customer-foot"></tfoot></table></div>
+    </section>
+    <section class="panel" id="turnaround-view" role="tabpanel" aria-labelledby="turnaround-tab" hidden>
+      <div class="panel-head"><h2>Promoted &amp; Closed Customer Bug E2E TAT</h2><span id="tat-source-label">Loading issue data...</span></div>
+      <div class="toolbar tat-toolbar">
+        <label>Created year <select id="tat-year" aria-label="Select issue creation year"><option value="">Loading years...</option></select></label>
+        <label>Reporter <input id="tat-reporter-filter" type="search" placeholder="All reporters" aria-label="Filter by reporter"></label>
+        <label>Customer <input id="tat-customer-filter" type="search" placeholder="All customers" aria-label="Filter by customer"></label>
+        <label>CFE Team <select id="tat-team-filter"><option value="all">All teams</option><option selected>WiFi CFE</option><option>BT CFE</option><option>CIE CFE</option><option>Other</option></select></label>
+        <label>Bug project <select id="tat-project-filter"><option value="all">All projects</option></select></label>
+        <label>Software change <select id="tat-sw-change"><option value="all">All</option><option value="0">No</option><option value="1">Yes</option></select></label>
+      </div>
+      <div class="tat-summary" aria-label="Turnaround summary">
+        <div class="tat-stat"><span>Average CFE turnaround</span><strong id="tat-cfe-days">-</strong></div>
+        <div class="tat-stat"><span>Qualifying issues</span><strong id="tat-issue-count">-</strong></div>
+      </div>
+      <p class="tat-status" id="tat-status" role="status" aria-live="polite">Select a year to load turnaround data.</p>
+      <section class="tat-table-section"><h3>Turnaround by reporter</h3><div class="tat-table-wrap" id="tat-reporter-table"></div></section>
+      <section class="tat-table-section"><h3>Turnaround by customer</h3><div class="tat-table-wrap" id="tat-customer-table"></div></section>
+      <section class="tat-table-section">
+        <h3>Closed &amp; Never Promoted Customer Bug: IPS TAT by reporter</h3>
+        <div class="tat-summary" aria-label="Closed unpromoted IPS turnaround summary">
+          <div class="tat-stat"><span>Average IPS turnaround</span><strong id="tat-ips-average">-</strong></div>
+          <div class="tat-stat"><span>Qualifying issues</span><strong id="tat-ips-count">-</strong></div>
+        </div>
+        <div class="tat-table-wrap" id="tat-ips-closure-table"></div>
+      </section>
+    </section>
     <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab">
-    <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
-    <section class="panel"><div class="panel-head"><h2 id="loading-title">Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table><thead id="table-head"></thead><tbody id="table-body"></tbody><tfoot id="table-foot"></tfoot></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
+    <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong><small class="stat-detail" id="top-weighted-engineer">Top loading: -</small></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
+    <section class="panel"><div class="panel-head"><h2 id="loading-title">Weighted team loading</h2><span id="status">Loading...</span></div><div class="toolbar"><label>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="active_uips">Active IPS</option><option value="active_hsd">Active HSD</option><option value="jira">Jira</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table class="sortable-table"><thead id="table-head"></thead><tbody id="table-body"></tbody><tfoot id="table-foot"></tfoot></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
       <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
     </section>
   </main>
@@ -231,7 +307,6 @@
           document.querySelector('#dashboard-subtitle').textContent = 'Live weighted loading from ips_jira_bugs_v2';
           document.querySelector('#activity-tab').hidden = true;
           document.querySelector('#activity-view').hidden = true;
-          document.querySelector('.view-switch').hidden = true;
           document.querySelector('#date-filter').closest('label').hidden = true;
           document.querySelector('#run-batch').textContent = 'Refresh v2 data';
           document.querySelector('#restart-server').hidden = true;
@@ -249,11 +324,25 @@
     };
     let currentTeamFilter = ['wifi', 'bt'].includes(savedViewState.team) ? savedViewState.team : 'all';
     document.querySelector('#name-filter').value = savedViewState.name || '';
-    document.querySelector('#sort-filter').value = ['weighted_loading_value', 'total', 'name'].includes(savedViewState.sort) ? savedViewState.sort : 'weighted_loading_value';
+    const loadingSortKeys = ['weighted_loading_value', 'total', 'active_uips', 'active_hsd', 'jira', 'name'];
+    document.querySelector('#sort-filter').value = loadingSortKeys.includes(savedViewState.sort) ? savedViewState.sort : 'weighted_loading_value';
+    const loadingSortState = { key: document.querySelector('#sort-filter').value, direction: document.querySelector('#sort-filter').value === 'name' ? 'asc' : 'desc', clickedKey: null };
     document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === currentTeamFilter)); });
     let currentSnapshot = { rows: [], categories: [] };
     let currentActivity = { sheets: [] };
     let activityLoading = false;
+    let yearlyLoading = false;
+    let yearlyLoaded = false;
+    let currentYearlyIssues = null;
+    const yearlySortStates = {
+      engineer: { key: 'weighted_loading', direction: 'desc', clickedKey: null },
+      customer: { key: 'weighted_loading', direction: 'desc', clickedKey: null },
+    };
+    const turnaroundSortStates = {
+      reporter: { key: 'ips_tat_till_jira_hours', direction: 'desc', clickedKey: null },
+      customer: { key: 'ips_tat_till_jira_hours', direction: 'desc', clickedKey: null },
+      ipsClosure: { key: 'ips_only_tat_hours', direction: 'desc', clickedKey: null },
+    };
     let toastTimer;
     function showToast(message) {
       const toast = document.querySelector('#toast'); toast.textContent = message; toast.hidden = false; window.clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { toast.hidden = true; }, 5000);
@@ -262,6 +351,18 @@
       savedViewState = { name: document.querySelector('#name-filter').value, category: document.querySelector('#category-filter').value, sort: document.querySelector('#sort-filter').value, team: currentTeamFilter };
       sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(savedViewState));
     }
+    function sortHeader(label, key, state) {
+      const active = state.key === key;
+      const ariaSort = active ? (state.direction === 'desc' ? 'descending' : 'ascending') : 'none';
+      const direction = state.direction === 'desc' ? 'descending' : 'ascending';
+      return `<th scope="col" aria-sort="${ariaSort}"><button class="yearly-sort-button" type="button" data-sort-key="${key}" aria-label="Sort by ${esc(label)}${active ? `, currently ${direction}` : ''}">${esc(label)}</button></th>`;
+    }
+    function toggleSortState(state, key) {
+      const repeatedClick = state.clickedKey === key;
+      state.key = key;
+      state.direction = repeatedClick && state.direction === 'desc' ? 'asc' : 'desc';
+      state.clickedKey = key;
+    }
     function renderSnapshot() {
       const rows = currentSnapshot.rows.filter(row => {
         const nameMatch = String(row.name || '').toLowerCase().includes(document.querySelector('#name-filter').value.toLowerCase());
@@ -269,11 +370,20 @@
         const teamMatch = currentTeamFilter === 'all' || TEAM_MEMBERS[currentTeamFilter].has(String(row.name || '').trim().toLowerCase());
         return nameMatch && teamMatch && (!category || Number(row.category_counts?.[category] || 0) > 0);
       }).sort((left, right) => {
-        const key = document.querySelector('#sort-filter').value;
-        return key === 'name' ? String(left.name).localeCompare(String(right.name)) : Number(right[key] || 0) - Number(left[key] || 0);
+        const key = loadingSortState.key;
+        const value = row => key === 'active_uips'
+          ? Number(row.active_uips ?? Math.max(0, Number(row.uips || 0) - Number(row.stale_ips || 0) - Number(row.close_pending || 0)))
+          : key === 'active_hsd'
+            ? Number(row.active_hsd ?? Math.max(0, Number(row.uhsd || 0) - Number(row.stale_hsd || 0)))
+            : Number(row[key] || 0);
+        const comparison = key === 'name' ? String(left.name).localeCompare(String(right.name)) : value(left) - value(right);
+        return loadingSortState.direction === 'desc' ? -comparison : comparison;
       });
+      const topLoading = rows.reduce((top, row) => !top || Number(row.weighted_loading_value || 0) > Number(top.weighted_loading_value || 0) ? row : top, null);
       document.querySelector('#member-count').textContent = rows.length; document.querySelector('#weighted-total').textContent = money(rows.reduce((sum, row) => sum + Number(row.weighted_loading_value || 0), 0));
-      document.querySelector('#table-head').innerHTML = '<tr><th><span class="sr-only">Details</span></th><th>Name</th><th>Active IPS</th><th>Active HSD</th><th>Jira</th><th>Total</th><th>Weighted Loading</th></tr>';
+      document.querySelector('#top-weighted-engineer').textContent = topLoading ? `Top loading: ${topLoading.name} (${money(topLoading.weighted_loading_value)})` : 'Top loading: -';
+      const loadingHeaders = [['Name', 'name'], ['Active IPS', 'active_uips'], ['Active HSD', 'active_hsd'], ['Jira', 'jira'], ['Total', 'total'], ['Weighted Loading', 'weighted_loading_value']];
+      document.querySelector('#table-head').innerHTML = `<tr><th><span class="sr-only">Details</span></th>${loadingHeaders.map(([label, key]) => sortHeader(label, key, loadingSortState)).join('')}</tr>`;
       document.querySelector('#table-body').innerHTML = rows.map(row => {
         const activeUips = row.active_uips ?? Math.max(0, Number(row.uips || 0) - Number(row.stale_ips || 0) - Number(row.close_pending || 0)); const activeHsd = row.active_hsd ?? Math.max(0, Number(row.uhsd || 0) - Number(row.stale_hsd || 0)); const rowIndex = currentSnapshot.rows.indexOf(row); const detailId = `member-detail-${rowIndex}`; const issueDetailsId = `member-issues-${rowIndex}`;
         const categories = Object.entries(row.category_counts || {}).filter(([, count]) => Number(count) > 0).sort((left, right) => Number(right[1]) - Number(left[1]) || left[0].localeCompare(right[0]));
@@ -350,15 +460,252 @@
               document.querySelector('#activity-record-count').textContent = 'Workbook unavailable';
             } finally { button.disabled = false; button.textContent = 'Refresh workbook'; activityLoading = false; }
           }
+          function renderYearlyTable(grouping, tableName) {
+            if (!currentYearlyIssues) return;
+            const result = currentYearlyIssues[grouping] || { groups: [], total: {} };
+            const prefix = `yearly-${tableName}`;
+            const columns = [
+              [tableName === 'engineer' ? 'Engineer' : 'Customer', 'name'],
+              ['Total IPS count', 'total_ips'], ['Promoted IPS', 'promoted_ips'], ['Not promoted IPS', 'not_promoted_ips'],
+              ['Total HSD count', 'total_hsd'], ['Not promoted HSD', 'not_promoted_hsd'], ['JIRA count', 'jira_count'],
+              ['Total issue count', 'total_issue_count'], ['JIRA triage rate', 'jira_triage_rate'],
+              ['Driver Fixed Rate', 'driver_fixed_rate'], ['Fixed Jira', 'fixed_jira'],
+              ['Good Bug%', 'good_bug_ratio'], ['Weighted loading', 'weighted_loading'],
+            ];
+            const rows = result.groups.filter(row => tableName !== 'engineer' || currentTeamFilter === 'all' || TEAM_MEMBERS[currentTeamFilter].has(String(row.name || '').trim().toLowerCase()));
+            const sortState = yearlySortStates[tableName];
+            const sortKey = sortState.key;
+            rows.sort((left, right) => {
+              const comparison = sortKey === 'name'
+                ? String(left.name).localeCompare(String(right.name))
+                : Number(left[sortKey] || 0) - Number(right[sortKey] || 0);
+              return sortState.direction === 'desc' ? -comparison : comparison;
+            });
+            const total = rows.reduce((aggregate, row) => {
+              ['total_ips', 'promoted_ips', 'not_promoted_ips', 'total_hsd', 'not_promoted_hsd', 'jira_count', 'total_issue_count', 'fixed_jira', 'good_bug_count', 'good_bug_denominator', 'weighted_loading'].forEach(key => { aggregate[key] += Number(row[key] || 0); });
+              return aggregate;
+            }, { name: 'Total', total_ips: 0, promoted_ips: 0, not_promoted_ips: 0, total_hsd: 0, not_promoted_hsd: 0, jira_count: 0, total_issue_count: 0, fixed_jira: 0, good_bug_count: 0, good_bug_denominator: 0, weighted_loading: 0 });
+            total.jira_triage_rate = total.total_ips ? total.promoted_ips / total.total_ips : 0;
+            total.driver_fixed_rate = total.total_issue_count ? total.fixed_jira / total.total_issue_count : 0;
+            total.good_bug_ratio = total.good_bug_denominator ? total.good_bug_count / total.good_bug_denominator : 0;
+            const count = value => Number(value || 0).toLocaleString();
+            const percent = (value, digits = 0) => `${(Number(value || 0) * 100).toFixed(digits)}%`;
+            const cell = (row, key) => {
+              if (key === 'good_bug_ratio') return percent(row[key], 1);
+              if (key.endsWith('_rate')) return percent(row[key]);
+              if (key === 'weighted_loading') return Number(row[key] || 0).toFixed(2);
+              return key === 'name' ? esc(row[key]) : count(row[key]);
+            };
+            document.querySelector(`#${prefix}-head`).innerHTML = `<tr>${columns.map(([label, key]) => {
+              const activeSort = key === sortState.key;
+              const ariaSort = activeSort ? (sortState.direction === 'desc' ? 'descending' : 'ascending') : 'none';
+              return `<th scope="col" aria-sort="${ariaSort}"><button class="yearly-sort-button" type="button" data-sort-key="${key}" aria-label="Sort by ${esc(label)}${activeSort ? `, currently ${sortState.direction === 'desc' ? 'descending' : 'ascending'}` : ''}">${esc(label)}</button></th>`;
+            }).join('')}</tr>`;
+            document.querySelector(`#${prefix}-body`).innerHTML = rows.map(row => `<tr>${columns.map(([, key]) => `<td>${cell(row, key)}</td>`).join('')}</tr>`).join('');
+            document.querySelector(`#${prefix}-foot`).innerHTML = `<tr>${columns.map(([, key], index) => `<td>${index === 0 ? 'Total' : cell(total, key)}</td>`).join('')}</tr>`;
+          }
+          function formatTatDuration(hours) {
+            if (!Number.isFinite(hours)) return '-';
+            const totalHours = Math.round(hours);
+            const days = Math.floor(totalHours / 24);
+            const remainingHours = totalHours % 24;
+            return `${days} day${days === 1 ? '' : 's'} ${remainingHours} hour${remainingHours === 1 ? '' : 's'}`;
+          }
+          function averageField(rows, key) {
+            const values = rows.map(row => row[key]).filter(value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))).map(Number);
+            return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+          }
+          function matchesTurnaroundFilters(row) {
+            const reporter = document.querySelector('#tat-reporter-filter').value.trim().toLowerCase();
+            const customer = document.querySelector('#tat-customer-filter').value.trim().toLowerCase();
+            const team = document.querySelector('#tat-team-filter').value;
+            const project = document.querySelector('#tat-project-filter').value;
+            const swChange = document.querySelector('#tat-sw-change').value;
+            return String(row.reporter || '').toLowerCase().includes(reporter)
+              && String(row.customer || '').toLowerCase().includes(customer)
+              && (team === 'all' || row.cfe_team === team)
+              && (project === 'all' || row.bug_project === project)
+              && (swChange === 'all' || String(Number(Boolean(row.is_sw_change))) === swChange);
+          }
+          function filteredTurnaroundRecords() {
+            return (currentYearlyIssues?.turnaround_records || []).filter(matchesTurnaroundFilters);
+          }
+          function filteredClosedUnpromotedIpsRecords() {
+            return (currentYearlyIssues?.closed_unpromoted_ips_records || []).filter(matchesTurnaroundFilters);
+          }
+          function renderClosedUnpromotedIpsTable(records) {
+            const host = document.querySelector('#tat-ips-closure-table');
+            document.querySelector('#tat-ips-average').textContent = formatTatDuration(averageField(records, 'ips_only_tat_hours'));
+            document.querySelector('#tat-ips-count').textContent = records.length.toLocaleString();
+            const buckets = new Map();
+            records.forEach(row => {
+              const name = String(row.reporter || 'Unassigned');
+              if (!buckets.has(name)) buckets.set(name, []);
+              buckets.get(name).push(row);
+            });
+            const groups = [...buckets.entries()].map(([name, rows]) => ({
+              name,
+              average: averageField(rows, 'ips_only_tat_hours'),
+              count: rows.length,
+            }));
+            const state = turnaroundSortStates.ipsClosure;
+            groups.sort((left, right) => {
+              const comparison = state.key === 'name'
+                ? left.name.localeCompare(right.name)
+                : Number(left[state.key] ?? -1) - Number(right[state.key] ?? -1);
+              return state.direction === 'desc' ? -comparison : comparison;
+            });
+            if (!groups.length) {
+              host.innerHTML = '<div class="tat-empty">No closed, never-promoted IPS issues match the current filters.</div>';
+              return;
+            }
+            const total = { name: 'Total', average: averageField(records, 'ips_only_tat_hours'), count: records.length };
+            const rowMarkup = row => `<tr><th scope="row">${esc(row.name)}</th><td>${formatTatDuration(row.average)}</td><td>${row.count.toLocaleString()}</td></tr>`;
+            host.innerHTML = `<table class="activity-table tat-table"><caption class="sr-only">IPS creation-to-closure average by reporter</caption><thead><tr>${sortHeader('Reporter', 'name', state)}${sortHeader('Average IPS created to closed', 'ips_only_tat_hours', state)}${sortHeader('IPS issue count', 'count', state)}</tr></thead><tbody>${groups.map(rowMarkup).join('')}</tbody><tfoot>${rowMarkup(total)}</tfoot></table>`;
+          }
+          function renderTurnaroundTable(containerId, groupKey, records) {
+            const buckets = new Map();
+            records.forEach(row => {
+              const name = String(row[groupKey] || 'Unassigned');
+              if (!buckets.has(name)) buckets.set(name, []);
+              buckets.get(name).push(row);
+            });
+            const groups = [...buckets.entries()].map(([name, rows]) => ({
+              name,
+              ips_tat_till_jira_hours: averageField(rows, 'ips_tat_till_jira_hours'),
+              jira_sighting_hours: averageField(rows, 'jira_sighting_hours'),
+              jira_pending_hours: averageField(rows, 'jira_pending_hours'),
+              averages: [
+                averageField(rows, 'ips_tat_till_jira_hours'),
+                averageField(rows, 'jira_sighting_hours'),
+                averageField(rows, 'jira_pending_hours'),
+              ],
+              ipsCount: rows.filter(row => row.has_ips_title).length,
+              jiraCount: rows.filter(row => row.has_jira_title).length,
+            }));
+            const state = turnaroundSortStates[groupKey];
+            groups.sort((left, right) => {
+              const comparison = state.key === 'name'
+                ? left.name.localeCompare(right.name)
+                : Number(left[state.key] ?? -1) - Number(right[state.key] ?? -1);
+              return state.direction === 'desc' ? -comparison : comparison;
+            });
+            const host = document.querySelector(`#${containerId}`);
+            if (!groups.length) {
+              host.innerHTML = '<div class="tat-empty">No issues match the current filters.</div>';
+              return;
+            }
+            const total = {
+              name: 'Total',
+              averages: [
+                averageField(records, 'ips_tat_till_jira_hours'),
+                averageField(records, 'jira_sighting_hours'),
+                averageField(records, 'jira_pending_hours'),
+              ],
+              ipsCount: records.filter(row => row.has_ips_title).length,
+              jiraCount: records.filter(row => row.has_jira_title).length,
+            };
+            const rowMarkup = group => `<tr><th scope="row">${esc(group.name)}</th><td>${formatTatDuration(group.averages[0])}</td><td>${formatTatDuration(group.averages[1])}</td><td>${formatTatDuration(group.averages[2])}</td><td>${group.ipsCount.toLocaleString()}</td><td>${group.jiraCount.toLocaleString()}</td></tr>`;
+            const headers = [
+              [groupKey === 'reporter' ? 'Reporter' : 'Customer', 'name'],
+              ['Average IPS to Jira', 'ips_tat_till_jira_hours'],
+              ['Average Jira sighting', 'jira_sighting_hours'],
+              ['Average Jira pending', 'jira_pending_hours'],
+              ['IPS title count', 'ipsCount'],
+              ['Jira title count', 'jiraCount'],
+            ];
+            host.innerHTML = `<table class="activity-table tat-table"><caption class="sr-only">Turnaround averages and title counts by ${groupKey}</caption><thead><tr>${headers.map(([label, key]) => sortHeader(label, key, state)).join('')}</tr></thead><tbody>${groups.map(rowMarkup).join('')}</tbody><tfoot>${rowMarkup(total)}</tfoot></table>`;
+          }
+          function renderTurnaround() {
+            const status = document.querySelector('#tat-status');
+            if (!currentYearlyIssues) return;
+            const missing = currentYearlyIssues.turnaround_missing_columns || [];
+            document.querySelector('#tat-source-label').textContent = `${currentYearlyIssues.source_table || 'ips_jira_bugs'} · ${currentYearlyIssues.selected_year}`;
+            if (missing.length) {
+              status.classList.add('error');
+              status.textContent = `Turnaround fields unavailable in this source: ${missing.join(', ')}`;
+              document.querySelector('#tat-cfe-days').textContent = '-';
+              document.querySelector('#tat-issue-count').textContent = '0';
+              document.querySelector('#tat-reporter-table').innerHTML = '<div class="tat-empty">Turnaround fields are not available in this source.</div>';
+              document.querySelector('#tat-customer-table').innerHTML = '<div class="tat-empty">Turnaround fields are not available in this source.</div>';
+            } else {
+              status.classList.remove('error');
+              const records = filteredTurnaroundRecords();
+              const cfeAverages = ['ips_tat_till_jira_hours', 'jira_sighting_hours', 'jira_pending_hours'].map(key => averageField(records, key)).filter(Number.isFinite);
+              const cfeDays = cfeAverages.length ? Math.floor(cfeAverages.reduce((sum, value) => sum + value, 0) / 24) : null;
+              document.querySelector('#tat-cfe-days').textContent = cfeDays === null ? '-' : `${cfeDays.toLocaleString()} days`;
+              document.querySelector('#tat-issue-count').textContent = records.length.toLocaleString();
+              status.textContent = `${records.length.toLocaleString()} qualifying promoted issues · average durations rounded to whole hours`;
+              renderTurnaroundTable('tat-reporter-table', 'reporter', records);
+              renderTurnaroundTable('tat-customer-table', 'customer', records);
+            }
+            const closureMissing = currentYearlyIssues.ips_closure_missing_columns || [];
+            if (closureMissing.length) {
+              document.querySelector('#tat-ips-average').textContent = '-';
+              document.querySelector('#tat-ips-count').textContent = '0';
+              document.querySelector('#tat-ips-closure-table').innerHTML = `<div class="tat-empty">IPS closure fields unavailable in this source: ${closureMissing.map(esc).join(', ')}</div>`;
+            } else {
+              renderClosedUnpromotedIpsTable(filteredClosedUnpromotedIpsRecords());
+            }
+          }
+          async function loadYearlyIssues(year = '') {
+            if (yearlyLoading) return;
+            yearlyLoading = true;
+            const status = document.querySelector('#yearly-status');
+            status.classList.remove('error'); status.textContent = 'Loading yearly issue data...';
+            try {
+              const params = new URLSearchParams({ source: IS_V2_LOADING_TEST ? 'ips_jira_bugs_v2' : 'ips_jira_bugs' });
+              if (year) params.set('year', year);
+              const suffix = `?${params.toString()}`;
+              const response = await fetch(`${API_BASE}/api/yearly-issues${suffix}`, { cache: 'no-store' });
+              const responseText = await response.text();
+              let result;
+              try { result = JSON.parse(responseText); } catch (parseError) { throw new Error(`Server returned HTTP ${response.status} instead of JSON.`); }
+              if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
+              const years = Array.isArray(result.years) ? result.years : [];
+              [document.querySelector('#yearly-year'), document.querySelector('#tat-year')].forEach(select => {
+                select.innerHTML = years.map(value => `<option value="${esc(value)}">${esc(value)}</option>`).join('');
+                if (!years.includes(Number(result.selected_year))) {
+                  select.insertAdjacentHTML('beforeend', `<option value="${esc(result.selected_year)}">${esc(result.selected_year)}</option>`);
+                }
+                select.value = String(result.selected_year);
+              });
+              currentYearlyIssues = result;
+              const projectSelect = document.querySelector('#tat-project-filter');
+              const selectedProject = projectSelect.value;
+              const projectRecords = [...(result.turnaround_records || []), ...(result.closed_unpromoted_ips_records || [])];
+              const projects = [...new Set(projectRecords.map(row => row.bug_project).filter(Boolean))].sort((left, right) => left.localeCompare(right));
+              projectSelect.innerHTML = '<option value="all">All projects</option>' + projects.map(project => `<option value="${esc(project)}">${esc(project)}</option>`).join('');
+              projectSelect.value = projects.includes(selectedProject) ? selectedProject : 'all';
+              renderYearlyTable('engineers', 'engineer');
+              renderYearlyTable('customers', 'customer');
+              renderTurnaround();
+              document.querySelector('#yearly-note').textContent = result.weighting_message || '';
+              status.textContent = `${result.selected_year} · ${result.engineers?.groups?.length || 0} engineers · ${result.customers?.groups?.length || 0} customers`;
+              yearlyLoaded = true;
+            } catch (error) {
+              status.classList.add('error'); status.textContent = `Unable to load yearly issues: ${error.message}`;
+            } finally { yearlyLoading = false; }
+          }
           function selectDashboardView(view) {
             const activity = view === 'activity';
+            const loading = view === 'loading';
+            const turnaround = view === 'turnaround';
             document.querySelector('#activity-tab').setAttribute('aria-selected', String(activity));
-            document.querySelector('#loading-tab').setAttribute('aria-selected', String(!activity));
+            document.querySelector('#loading-tab').setAttribute('aria-selected', String(loading));
+            document.querySelector('#yearly-tab').setAttribute('aria-selected', String(view === 'yearly'));
+            document.querySelector('#turnaround-tab').setAttribute('aria-selected', String(turnaround));
             document.querySelector('#activity-tab').tabIndex = activity ? 0 : -1;
-            document.querySelector('#loading-tab').tabIndex = activity ? -1 : 0;
+            document.querySelector('#loading-tab').tabIndex = loading ? 0 : -1;
+            document.querySelector('#yearly-tab').tabIndex = view === 'yearly' ? 0 : -1;
+            document.querySelector('#turnaround-tab').tabIndex = turnaround ? 0 : -1;
             document.querySelector('#activity-view').hidden = !activity;
-            document.querySelector('#loading-view').hidden = activity;
+            document.querySelector('#loading-view').hidden = !loading;
+            document.querySelector('#yearly-view').hidden = view !== 'yearly';
+            document.querySelector('#turnaround-view').hidden = !turnaround;
             if (activity && !currentActivity.sheets.length) loadActivity();
+            if ((view === 'yearly' || turnaround) && !yearlyLoaded) loadYearlyIssues();
+            if (turnaround && yearlyLoaded) renderTurnaround();
           }
             async function loadDates() {
           if (IS_V2_LOADING_TEST) return;
@@ -492,23 +839,87 @@
         document.querySelector('#activity-sheet').addEventListener('change', renderActivitySheet);
         document.querySelector('#activity-search').addEventListener('input', renderActivitySheet);
         document.querySelector('#activity-refresh').addEventListener('click', () => loadActivity(true));
-        const dashboardTabs = [...document.querySelectorAll('.view-tab')];
-        dashboardTabs.forEach((tab, index) => {
-          tab.addEventListener('click', () => selectDashboardView(tab.id === 'activity-tab' ? 'activity' : 'loading'));
+        const dashboardTabs = [...document.querySelectorAll('.view-tab')].filter(tab => !tab.hidden);
+        dashboardTabs.forEach(tab => {
+          tab.addEventListener('click', () => selectDashboardView(tab.dataset.view || 'activity'));
           tab.addEventListener('keydown', event => {
+            const index = dashboardTabs.indexOf(tab);
             const nextIndex = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? (index + 1) % dashboardTabs.length : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? (index + dashboardTabs.length - 1) % dashboardTabs.length : event.key === 'Home' ? 0 : event.key === 'End' ? dashboardTabs.length - 1 : -1;
             if (nextIndex < 0) return;
             event.preventDefault(); dashboardTabs[nextIndex].focus(); dashboardTabs[nextIndex].click();
           });
         });
+        document.querySelector('#yearly-year').addEventListener('change', event => loadYearlyIssues(event.target.value));
+        document.querySelector('#tat-year').addEventListener('change', event => loadYearlyIssues(event.target.value));
+        document.querySelector('#tat-reporter-filter').addEventListener('input', renderTurnaround);
+        document.querySelector('#tat-customer-filter').addEventListener('input', renderTurnaround);
+        document.querySelector('#tat-team-filter').addEventListener('change', renderTurnaround);
+        document.querySelector('#tat-project-filter').addEventListener('change', renderTurnaround);
+        document.querySelector('#tat-sw-change').addEventListener('change', renderTurnaround);
+        document.querySelector('#yearly-sort-filter').addEventListener('change', () => {
+          const sortKey = document.querySelector('#yearly-sort-filter').value;
+          ['engineer', 'customer'].forEach(tableName => {
+            yearlySortStates[tableName] = {
+              key: sortKey,
+              direction: sortKey === 'name' ? 'asc' : 'desc',
+              clickedKey: null,
+            };
+          });
+          renderYearlyTable('engineers', 'engineer'); renderYearlyTable('customers', 'customer');
+        });
+        ['engineer', 'customer'].forEach(tableName => {
+          document.querySelector(`#yearly-${tableName}-head`).addEventListener('click', event => {
+            const button = event.target.closest('button[data-sort-key]');
+            if (!button) return;
+            const state = yearlySortStates[tableName];
+            const sortKey = button.dataset.sortKey;
+            const isRepeatedClick = state.clickedKey === sortKey;
+            state.key = sortKey;
+            state.direction = isRepeatedClick && state.direction === 'desc' ? 'asc' : 'desc';
+            state.clickedKey = sortKey;
+            document.querySelector('#yearly-sort-filter').value = sortKey;
+            renderYearlyTable(tableName === 'engineer' ? 'engineers' : 'customers', tableName);
+          });
+        });
+        document.querySelector('#yearly-team-filter').addEventListener('click', event => {
+          const button = event.target.closest('button[data-team]'); if (!button) return;
+          currentTeamFilter = button.dataset.team;
+          document.querySelectorAll('.team-filter button').forEach(option => { option.setAttribute('aria-pressed', String(option.dataset.team === currentTeamFilter)); });
+          saveViewState(); renderSnapshot(); renderYearlyTable('engineers', 'engineer');
+        });
+        document.querySelector('#table-head').addEventListener('click', event => {
+          const button = event.target.closest('button[data-sort-key]');
+          if (!button) return;
+          const sortKey = button.dataset.sortKey;
+          toggleSortState(loadingSortState, sortKey);
+          document.querySelector('#sort-filter').value = sortKey;
+          saveViewState(); renderSnapshot();
+        });
     document.querySelector('#name-filter').addEventListener('input', () => { saveViewState(); renderSnapshot(); });
     document.querySelector('#category-filter').addEventListener('change', () => { saveViewState(); renderSnapshot(); });
-    document.querySelector('#sort-filter').addEventListener('change', () => { saveViewState(); renderSnapshot(); });
+        document.querySelector('#sort-filter').addEventListener('change', event => {
+          loadingSortState.key = event.target.value;
+          loadingSortState.direction = loadingSortState.key === 'name' ? 'asc' : 'desc';
+          loadingSortState.clickedKey = null;
+          saveViewState(); renderSnapshot();
+        });
+        [
+          ['tat-reporter-table', 'reporter'],
+          ['tat-customer-table', 'customer'],
+          ['tat-ips-closure-table', 'ipsClosure'],
+        ].forEach(([tableId, stateKey]) => {
+          document.querySelector(`#${tableId}`).addEventListener('click', event => {
+            const button = event.target.closest('button[data-sort-key]');
+            if (!button) return;
+            toggleSortState(turnaroundSortStates[stateKey], button.dataset.sortKey);
+            renderTurnaround();
+          });
+        });
     document.querySelector('.team-filter').addEventListener('click', event => {
       const button = event.target.closest('button[data-team]'); if (!button) return;
       currentTeamFilter = button.dataset.team;
       document.querySelectorAll('.team-filter button').forEach(option => { option.setAttribute('aria-pressed', String(option === button)); });
-      saveViewState(); renderSnapshot();
+      saveViewState(); renderSnapshot(); renderYearlyTable('engineers', 'engineer');
     });
     document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
     runButton.addEventListener('click', runBatch);

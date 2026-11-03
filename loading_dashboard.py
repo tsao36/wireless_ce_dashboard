@@ -35,6 +35,14 @@ load_dotenv(ROOT / ".env", override=False)
 
 from APIs import Sherlock
 import issue_category_model as category_model
+from yearly_issue_dashboard import (
+    active_weight_rows,
+    aggregate_yearly_records,
+    closed_unpromoted_ips_records,
+    filter_oem_view_records,
+    turnaround_issue_records,
+    TURNAROUND_DURATION_FIELDS,
+)
 
 try:
     import snowflake.connector as snowflake_connector
@@ -90,6 +98,42 @@ FIELD_ISSUE_DETAIL_COLUMNS = (
     "jira_status",
     "jira_url",
     "customer",
+)
+YEARLY_ISSUE_COLUMNS = (
+    "ips_created_date",
+    "ips_closed_date",
+    "jira_created_date",
+    "engineer",
+    "customer",
+    "reporter",
+    "jira_assignee",
+    "ips_case_number",
+    "ips_jira_promo_status",
+    "is_ips_promoted_to_jira",
+    "ips_jira_id",
+    "ips_sub_status",
+    "ips_status",
+    "ips_title",
+    "ips_last_modified_days",
+    "ips_last_modified_date",
+    "ips_open_days",
+    "jira_id",
+    "jira_summary",
+    "jira_status",
+    "jira_is_sw_change",
+    "jira_state_reason",
+    "jira_team",
+    "jira_found_by",
+    "bug_status_custom",
+    *TURNAROUND_DURATION_FIELDS,
+    "hsd_id",
+    "hsd_promoted_id",
+    "hsd_status_reason",
+    "hsd_owner",
+    "hsd_submitted_date",
+    "hsd_title",
+    "bug_project",
+    "technology",
 )
 CATEGORY_TUNING_DIR = Path(
     os.environ.get(
@@ -463,6 +507,139 @@ def _load_field_issues() -> dict:
     }
 
 
+def _yearly_weighted_loading(records: list[dict], group_field: str, year: int | None = None) -> tuple[dict[str, float], str]:
+    active_rows = active_weight_rows(records, group_field, year=year)
+    if not active_rows:
+        return {}, ""
+
+    try:
+        model_bundle = category_model.load_category_model(str(CATEGORY_MODEL_PATH))
+        category_weights, technology_weights, default_weight = category_model.load_weight_map(str(WEIGHT_MAP_PATH))
+        to_classify = [row for row in active_rows if row["source_type"] != "hsd"]
+        classified = category_model.classify_and_weight_rows(
+            to_classify,
+            model_bundle=model_bundle,
+            category_weights=category_weights,
+            category_technology_weights=technology_weights,
+            default_weight=default_weight,
+        )
+        weighted_by_group: dict[str, float] = {}
+        for row in active_rows:
+            weight = 1.0 if row["source_type"] == "hsd" else 0.0
+            weighted_by_group[row["group_name"].casefold()] = (
+                weighted_by_group.get(row["group_name"].casefold(), 0.0) + weight
+            )
+        for row in classified:
+            key = row["group_name"].casefold()
+            weighted_by_group[key] = weighted_by_group.get(key, 0.0) + float(row.get("issue_weight") or 0.0)
+        return {key: round(value, 2) for key, value in weighted_by_group.items()}, ""
+    except Exception as exc:
+        counts: dict[str, float] = {}
+        for row in active_rows:
+            key = row["group_name"].casefold()
+            counts[key] = counts.get(key, 0.0) + 1.0
+        return {key: round(value, 2) for key, value in counts.items()}, (
+            f"Category weighting unavailable; showing active issue counts ({type(exc).__name__})."
+        )
+
+
+def _yearly_bug_created_date_sql(available: set[str]):
+    ips_number = (
+        sql.SQL("TRIM(COALESCE({}::text, ''))").format(sql.Identifier("ips_case_number"))
+        if "ips_case_number" in available
+        else sql.SQL("''")
+    )
+    has_ips = sql.SQL("{} ~ '^[0-9]*[1-9][0-9]*$'").format(ips_number)
+    ips_date = sql.Identifier("ips_created_date") if "ips_created_date" in available else sql.SQL("NULL")
+    hsd_date = sql.Identifier("hsd_submitted_date") if "hsd_submitted_date" in available else sql.SQL("NULL")
+    jira_date = sql.Identifier("jira_created_date") if "jira_created_date" in available else sql.SQL("NULL")
+    return sql.SQL(
+        "CASE WHEN {has_ips} THEN COALESCE({ips_date}, {jira_date}) "
+        "WHEN {hsd_date} IS NOT NULL THEN {hsd_date} ELSE {jira_date} END"
+    ).format(has_ips=has_ips, ips_date=ips_date, hsd_date=hsd_date, jira_date=jira_date)
+
+
+def _load_yearly_issues(
+    selected_year: int | None = None, source_table: str = FIELD_ISSUE_TABLE
+) -> dict:
+    if source_table not in {FIELD_ISSUE_TABLE, TEAM_LOADING_TEST_TABLE}:
+        raise ValueError("Unsupported issue source table")
+    db = Sherlock.PostgresCustomerEngineeringDb
+    connection = psycopg2.connect(
+        dbname=db.database, user=db.user, password=db.password, host=db.host, port=db.port, connect_timeout=10
+    )
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = %s AND table_schema = ANY(current_schemas(false))",
+                (source_table,),
+            )
+            available = {row[0] for row in cursor.fetchall()}
+            if "ips_created_date" not in available:
+                raise RuntimeError(f"ips_created_date is not available in {source_table}")
+
+            bug_created_date = _yearly_bug_created_date_sql(available)
+            cursor.execute(
+                sql.SQL(
+                    "SELECT DISTINCT EXTRACT(YEAR FROM ({bug_created_date}))::int AS issue_year "
+                    "FROM {table} WHERE ({bug_created_date}) IS NOT NULL ORDER BY issue_year DESC"
+                ).format(table=sql.Identifier(source_table), bug_created_date=bug_created_date)
+            )
+            years = [int(row[0]) for row in cursor.fetchall() if row[0] is not None]
+            if selected_year is None:
+                selected_year = CURRENT_YEAR if CURRENT_YEAR in years else (years[0] if years else CURRENT_YEAR)
+
+            records: list[dict] = []
+            columns = [name for name in YEARLY_ISSUE_COLUMNS if name in available]
+            if selected_year in years:
+                cursor.execute(
+                    sql.SQL(
+                        "SELECT {columns} FROM {table} "
+                        "WHERE ({bug_created_date}) >= make_date(%s, 1, 1) "
+                        "AND ({bug_created_date}) < make_date(%s, 1, 1)"
+                    ).format(
+                        columns=sql.SQL(", ").join(map(sql.Identifier, columns)),
+                        table=sql.Identifier(source_table),
+                        bug_created_date=bug_created_date,
+                    ),
+                    (selected_year, selected_year + 1),
+                )
+                records = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    finally:
+        connection.close()
+
+    engineers = aggregate_yearly_records(records, "engineer", selected_year)
+    oem_records = filter_oem_view_records(records)
+    customers = aggregate_yearly_records(oem_records, "customer", selected_year)
+    engineer_loading, engineer_note = _yearly_weighted_loading(records, "engineer", selected_year)
+    customer_loading, customer_note = _yearly_weighted_loading(oem_records, "customer", selected_year)
+    for row in engineers["groups"]:
+        row["weighted_loading"] = engineer_loading.get(row["name"].casefold(), 0.0)
+    engineers["total"]["weighted_loading"] = round(sum(engineer_loading.values()), 2)
+    for row in customers["groups"]:
+        row["weighted_loading"] = customer_loading.get(row["name"].casefold(), 0.0)
+    customers["total"]["weighted_loading"] = round(sum(customer_loading.values()), 2)
+
+    return {
+        "selected_year": selected_year,
+        "years": years,
+        "engineers": engineers,
+        "customers": customers,
+        "turnaround_records": turnaround_issue_records(records)
+        if set(TURNAROUND_DURATION_FIELDS).issubset(available)
+        else [],
+        "closed_unpromoted_ips_records": closed_unpromoted_ips_records(records)
+        if "ips_closed_date" in available
+        else [],
+        "ips_closure_missing_columns": [] if "ips_closed_date" in available else ["ips_closed_date"],
+        "turnaround_missing_columns": sorted(set(TURNAROUND_DURATION_FIELDS) - available),
+        "source_table": source_table,
+        "weighting_message": engineer_note or customer_note,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
 def _load_test_team_loading() -> dict:
     from offload_reporter_issues import (
         DbConnector,
@@ -712,15 +889,8 @@ def _detail_hash(value: object) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16] if text else ""
 
 
-def _load_category_queue() -> dict[str, dict]:
-    model_mtime = CATEGORY_MODEL_PATH.stat().st_mtime
-    if CATEGORY_CACHE["model_mtime"] != model_mtime:
-        CATEGORY_CACHE.update(
-            model_mtime=model_mtime,
-            bundle=category_model.load_category_model(str(CATEGORY_MODEL_PATH)),
-            predictions={},
-        )
-
+def _fetch_category_issue_rows() -> tuple[list[tuple], set[str]]:
+    """(case, title, url, status, engineer, created, technology) rows for the current-year review list, plus reviewer names."""
     db = Sherlock.PostgresCustomerEngineeringDb
     connection = psycopg2.connect(
         dbname=db.database, user=db.user, password=db.password, host=db.host, port=db.port, connect_timeout=10
@@ -757,7 +927,19 @@ def _load_category_queue() -> dict[str, dict]:
             reviewers = {row[0] for row in cursor.fetchall()}
     finally:
         connection.close()
+    return rows, reviewers
 
+
+def _load_category_queue() -> dict[str, dict]:
+    model_mtime = CATEGORY_MODEL_PATH.stat().st_mtime
+    if CATEGORY_CACHE["model_mtime"] != model_mtime:
+        CATEGORY_CACHE.update(
+            model_mtime=model_mtime,
+            bundle=category_model.load_category_model(str(CATEGORY_MODEL_PATH)),
+            predictions={},
+        )
+
+    rows, reviewers = _fetch_category_issue_rows()
     details = CATEGORY_CACHE["details"]
     missing = [
         case_number
@@ -1084,6 +1266,13 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/field-issues":
             self._send_field_issues()
             return
+        if parsed.path == "/api/yearly-issues":
+            query = parse_qs(parsed.query)
+            self._send_yearly_issues(
+                query.get("year", [None])[0],
+                query.get("source", [FIELD_ISSUE_TABLE])[0],
+            )
+            return
         if parsed.path == "/api/loading-v2":
             self._send_test_team_loading()
             return
@@ -1263,6 +1452,22 @@ class LoadingDashboardHandler(SimpleHTTPRequestHandler):
         except Exception as exc:
             self._send_json(
                 {"issues": [], "message": f"Unable to query {FIELD_ISSUE_TABLE} ({type(exc).__name__})."},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+
+    def _send_yearly_issues(self, year_text: str | None, source_table: str) -> None:
+        try:
+            selected_year = int(year_text) if year_text else None
+            if selected_year is not None and not 1900 <= selected_year <= 2200:
+                raise ValueError
+        except (TypeError, ValueError):
+            self._send_json({"message": "Year must be a valid four-digit calendar year."}, HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            self._send_json(_load_yearly_issues(selected_year, source_table))
+        except Exception as exc:
+            self._send_json(
+                {"message": f"Unable to query {source_table} ({type(exc).__name__})."},
                 HTTPStatus.INTERNAL_SERVER_ERROR,
             )
 
