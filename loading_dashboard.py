@@ -706,6 +706,7 @@ def _category_labels() -> list[str]:
     labels = _read_json(CATEGORY_CONFIG_PATH).get("default_categories") or []
     if not labels and CATEGORY_CACHE["bundle"]:
         labels = CATEGORY_CACHE["bundle"].get("labels") or []
+    labels = [*labels, "INF"]
     return sorted({str(label).strip() for label in labels if str(label).strip()}, key=str.casefold)
 
 

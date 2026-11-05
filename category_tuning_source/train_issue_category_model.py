@@ -20,6 +20,8 @@ LABEL_MAP: Dict[str, str] = {
     "sensing": "Sensing",
     "P2p": "P2P",
     "p2p": "P2P",
+    "Inf": "INF",
+    "inf": "INF",
     "Miracast": "P2P",
     "miracast": "P2P",
     "roaming": "Roaming",

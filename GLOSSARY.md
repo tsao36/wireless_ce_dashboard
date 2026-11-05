@@ -19,3 +19,7 @@ _Avoid_: Total TAT (when referring specifically to the CFE measure)
 **CFE Team**:
 The dashboard's team classification for an issue: WiFi CFE, BT CFE, CIE CFE, or Other.
 _Avoid_: Team (when the CFE classification is intended)
+
+**INF Category**:
+An issue whose confirmed cause is a missing, incorrect, or defective driver INF file or its device-installation metadata.
+_Avoid_: Driver issue (when no INF-file cause has been identified)

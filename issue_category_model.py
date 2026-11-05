@@ -68,6 +68,7 @@ CATEGORY_DEFINITIONS: Dict[str, str] = {
     "Connectivity": "Use for general association, authentication, DHCP, or disconnect failures without a specific cause; generic disconnects with 802.11r merely enabled stay Connectivity.",
     "Field Issue": "Use when the issue is explicitly classified as a field/customer deployment issue; do not use as a substitute for its technical root-cause category.",
     "HLK": "Use for failures in Windows Hardware Lab Kit certification or test runs; do not use for a failure seen only in ordinary customer use.",
+    "INF": "Use when the confirmed cause is a missing, incorrect, or defective driver INF file or its device-installation metadata; do not use solely because a driver or Device Manager is mentioned.",
     "ICPS/Killer": "Use for the Killer/ICPS software suite, service, installation, or UI; do not use for OEM utilities, which are OEM Tools.",
     "IOP": "Use for a confirmed interoperability defect between the wireless device and a specific peer, access point, or platform; use Connectivity when only a generic connection failure is known.",
     "MSFT": "Use when evidence identifies a Microsoft-owned component or confirmed Microsoft root cause; a Windows version or build alone is not sufficient.",
@@ -100,7 +101,7 @@ def _build_llm_system_prompt(categories: List[str]) -> str:
         "1. BSOD: system crash, bugcheck, stop code, or crash dump.\n"
         "2. YB/Lost: Yellow Bang, Code 10/43, device missing/disappeared, or PLDR failure.\n"
         "3. UEFI / BIOS: pre-boot UEFI or BIOS table/interface root cause.\n"
-        "4. Specific feature/protocol: Roaming, P2P, WowLAN, Sensing, RF, Audio, OEM Tools, or another explicitly supported specialized taxonomy category.\n"
+        "4. Specific feature/protocol or confirmed driver-package issue: INF, Roaming, P2P, WowLAN, Sensing, RF, Audio, OEM Tools, or another explicitly supported specialized taxonomy category.\n"
         "5. Performance: measured throughput/TPT drop or latency/ping spikes while connected.\n"
         "6. Connectivity: general association, authentication, DHCP, or disconnect when no higher-priority category applies.\n"
         "7. Need-Triage: insufficient evidence or confirmed non-Wi-Fi/BT issue.\n"
@@ -656,6 +657,7 @@ _LEGACY_CATEGORY_MAP: Dict[str, str] = {
     "icps": "ICPS/Killer",
     "killer": "ICPS/Killer",
     "icps/killer": "ICPS/Killer",
+    "inf": "INF",
     "miracast": "P2P",
     "not wifi issue": "Need-Triage",
     "not bt issue": "Need-Triage",
