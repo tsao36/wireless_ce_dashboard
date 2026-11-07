@@ -12,6 +12,7 @@ from yearly_issue_dashboard import (
     customer_custom,
     filter_oem_view_records,
     turnaround_issue_records,
+    yearly_weight_rows,
 )
 
 
@@ -432,3 +433,72 @@ def test_active_weight_rows_apply_source_eligibility_and_hsd_owner_match():
         ("hsd", "101", "", "HSD-1"),
     }
     assert sum(row["source_type"] == "hsd" for row in customer_rows) == 2
+
+
+def test_yearly_weight_rows_include_all_unpromoted_issues_in_selected_year():
+    rows = [
+        {
+            "engineer": "Engineer A",
+            "ips_case_number": "101",
+            "ips_jira_promo_status": "NOT YET PROMOTED",
+            "ips_status": "Closed",
+            "ips_created_date": date(2026, 1, 1),
+            "ips_last_modified_days": 90,
+            "ips_title": "WiFi reconnect issue",
+            "bug_project": "WIFI",
+        },
+        {
+            "engineer": "Engineer A",
+            "ips_case_number": "101",
+            "ips_jira_promo_status": "NOT YET PROMOTED",
+            "ips_created_date": date(2026, 1, 1),
+            "jira_id": "WIFI-1",
+            "jira_summary": "WiFi reconnect issue",
+            "jira_status": "Closed",
+            "bug_project": "WIFI",
+        },
+        {
+            "engineer": "Engineer A",
+            "ips_case_number": "102",
+            "ips_jira_promo_status": "PROMOTED",
+            "ips_created_date": date(2026, 2, 1),
+            "jira_id": "WIFI-2",
+            "jira_summary": "WiFi audio issue",
+            "bug_project": "WIFI",
+        },
+        {
+            "engineer": "Engineer A",
+            "ips_case_number": "NA",
+            "jira_created_date": date(2026, 3, 1),
+            "jira_id": "WIFI-3",
+            "jira_summary": "WiFi driver issue",
+            "bug_project": "WIFI",
+        },
+        {
+            "engineer": "Engineer A",
+            "ips_case_number": "NA",
+            "hsd_id": "HSD-1",
+            "hsd_submitted_date": date(2026, 4, 1),
+            "hsd_title": "WiFi customer issue",
+            "hsd_status_reason": "Closed",
+        },
+        {
+            "engineer": "Engineer A",
+            "ips_case_number": "NA",
+            "hsd_id": "HSD-2",
+            "hsd_promoted_id": "WIFI-4",
+            "hsd_submitted_date": date(2026, 5, 1),
+        },
+        {
+            "engineer": "Engineer A",
+            "ips_case_number": "NA",
+            "jira_created_date": date(2025, 12, 1),
+            "jira_id": "WIFI-5",
+        },
+    ]
+
+    weight_rows = yearly_weight_rows(rows, "engineer", 2026)
+    yearly_count = aggregate_yearly_records(rows, "engineer", 2026)["groups"][0]["total_issue_count"]
+
+    assert len(weight_rows) == yearly_count == 5
+    assert {row["source_type"] for row in weight_rows} == {"ips", "jira", "hsd"}

@@ -396,6 +396,54 @@ def active_weight_rows(
     return list(candidates.values())
 
 
+def yearly_weight_rows(
+    records: Iterable[dict[str, Any]], group_field: str, year: int | None = None
+) -> list[dict[str, Any]]:
+    """Return deduplicated source rows contributing to annual issue counts."""
+    jira_rows: dict[tuple[str, str], dict[str, Any]] = {}
+    ips_rows: dict[tuple[str, str], dict[str, Any]] = {}
+    promoted_ips: set[tuple[str, str]] = set()
+    hsd_rows: dict[tuple[str, str], dict[str, Any]] = {}
+    promoted_hsd: set[tuple[str, str]] = set()
+
+    for row in records:
+        if year is not None and not _in_year(bug_created_date(row), year):
+            continue
+        group_name = _group_name(row, group_field)
+        group_key = group_name.casefold()
+        title = _text(row.get("ips_title")) or _text(row.get("jira_summary")) or _text(row.get("hsd_title"))
+        common = {
+            "group_name": group_name,
+            "title": title,
+            "technology": _technology(row),
+            "is_field_issue": "field issue" in title.casefold(),
+        }
+
+        jira_id = _valid_id(row.get("jira_id")) or _valid_id(row.get("ips_jira_id"))
+        if jira_id:
+            jira_rows.setdefault((group_key, jira_id.casefold()), {**common, "source_type": "jira"})
+
+        ips_id = _valid_ips_id(row.get("ips_case_number"))
+        if ips_id:
+            key = (group_key, ips_id)
+            ips_rows.setdefault(key, {**common, "source_type": "ips"})
+            if _normalized(row.get("ips_jira_promo_status")) in {"promoted", "done"}:
+                promoted_ips.add(key)
+
+        hsd_id = _valid_id(row.get("hsd_id"))
+        if hsd_id:
+            key = (group_key, hsd_id.casefold())
+            hsd_rows.setdefault(key, {**common, "source_type": "hsd"})
+            if _valid_id(row.get("hsd_promoted_id")):
+                promoted_hsd.add(key)
+
+    return [
+        *jira_rows.values(),
+        *(row for key, row in ips_rows.items() if key not in promoted_ips),
+        *(row for key, row in hsd_rows.items() if key not in promoted_hsd),
+    ]
+
+
 def _metrics(records: list[dict[str, Any]], year: int | None = None) -> dict[str, Any]:
     year_records = records if year is None else [row for row in records if _in_year(bug_created_date(row), year)]
     ips_records = year_records

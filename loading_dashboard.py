@@ -36,11 +36,11 @@ load_dotenv(ROOT / ".env", override=False)
 from APIs import Sherlock
 import issue_category_model as category_model
 from yearly_issue_dashboard import (
-    active_weight_rows,
     aggregate_yearly_records,
     closed_unpromoted_ips_records,
     filter_oem_view_records,
     turnaround_issue_records,
+    yearly_weight_rows,
     TURNAROUND_DURATION_FIELDS,
 )
 
@@ -508,14 +508,14 @@ def _load_field_issues() -> dict:
 
 
 def _yearly_weighted_loading(records: list[dict], group_field: str, year: int | None = None) -> tuple[dict[str, float], str]:
-    active_rows = active_weight_rows(records, group_field, year=year)
-    if not active_rows:
+    annual_rows = yearly_weight_rows(records, group_field, year=year)
+    if not annual_rows:
         return {}, ""
 
     try:
         model_bundle = category_model.load_category_model(str(CATEGORY_MODEL_PATH))
         category_weights, technology_weights, default_weight = category_model.load_weight_map(str(WEIGHT_MAP_PATH))
-        to_classify = [row for row in active_rows if row["source_type"] != "hsd"]
+        to_classify = [row for row in annual_rows if row["source_type"] != "hsd"]
         classified = category_model.classify_and_weight_rows(
             to_classify,
             model_bundle=model_bundle,
@@ -524,7 +524,7 @@ def _yearly_weighted_loading(records: list[dict], group_field: str, year: int | 
             default_weight=default_weight,
         )
         weighted_by_group: dict[str, float] = {}
-        for row in active_rows:
+        for row in annual_rows:
             weight = 1.0 if row["source_type"] == "hsd" else 0.0
             weighted_by_group[row["group_name"].casefold()] = (
                 weighted_by_group.get(row["group_name"].casefold(), 0.0) + weight
@@ -535,11 +535,11 @@ def _yearly_weighted_loading(records: list[dict], group_field: str, year: int | 
         return {key: round(value, 2) for key, value in weighted_by_group.items()}, ""
     except Exception as exc:
         counts: dict[str, float] = {}
-        for row in active_rows:
+        for row in annual_rows:
             key = row["group_name"].casefold()
             counts[key] = counts.get(key, 0.0) + 1.0
         return {key: round(value, 2) for key, value in counts.items()}, (
-            f"Category weighting unavailable; showing active issue counts ({type(exc).__name__})."
+            f"Category weighting unavailable; showing annual issue counts ({type(exc).__name__})."
         )
 
 
