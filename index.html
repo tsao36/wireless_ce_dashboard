@@ -43,6 +43,14 @@
     .panel-head h2 { margin:0; font-size:22px; }
     #status { color:var(--muted); font:13px "Segoe UI",Tahoma,sans-serif; }
     .table-wrap { overflow-x:auto; }
+    .oem-panel { margin-top:16px; }
+    .oem-table { min-width:540px; }
+    .oem-table td { font-variant-numeric:tabular-nums; }
+    .oem-table td:first-child { text-align:left; }
+    .oem-table-wrap { max-height:min(38vh,420px); overflow:auto; }
+    .oem-select-button { padding:4px 0; border:0; color:var(--ink); background:transparent; font:700 14px "Segoe UI",Tahoma,sans-serif; text-align:left; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; cursor:pointer; }
+    .oem-select-button[aria-pressed="true"] { color:var(--accent); }
+    .oem-select-button:hover,.oem-select-button:focus-visible { color:var(--accent); outline:2px solid var(--accent); outline-offset:2px; }
     table { width:100%; min-width:700px; border-collapse:collapse; font:14px "Segoe UI",Tahoma,sans-serif; }
     th { padding:12px 14px; color:#fff; background:var(--deep); text-align:left; white-space:nowrap; }
     td { padding:12px 14px; border-bottom:1px solid #f0dfb8; }
@@ -192,6 +200,7 @@
       .table-wrap { overflow:visible; }
       table { min-width:0; }
       #loading-view .table-wrap > table { width:100%; table-layout:fixed; }
+      #loading-view .oem-table-wrap { overflow-x:auto; }
       #table-head { display:none; }
       #table-body { display:block; width:100%; max-width:100%; }
       .member-row { display:grid; width:100%; max-width:100%; grid-template-columns:40px 1fr auto; align-items:center; padding:8px 8px 8px 4px; border-bottom:1px solid #d8dce4; }
@@ -287,6 +296,7 @@
     <section id="loading-view" role="tabpanel" aria-labelledby="loading-tab">
     <section class="summary" aria-label="Loading summary"><div class="stat"><span>Team members</span><strong id="member-count">-</strong></div><div class="stat"><span>Total weighted loading</span><strong id="weighted-total">-</strong><small class="stat-detail" id="top-weighted-engineer">Top loading: -</small></div><div class="stat updated-stat"><span>Updated</span><strong id="updated">-</strong><button class="weight-button" type="button" id="show-weights" aria-label="View current category and technology weights" title="View weights">i</button></div></section>
     <section class="panel"><div class="panel-head"><h2 id="loading-title">Weighted team loading v2</h2><span id="status">Loading...</span></div><div class="toolbar"><label hidden>Date <select id="date-filter"><option value="latest">Latest</option></select></label><label>Search <input id="name-filter" type="search" placeholder="Member name" aria-label="Search member name"></label><label>Category <select id="category-filter"><option value="">All categories</option></select></label><label>Sort <select id="sort-filter"><option value="weighted_loading_value">Weighted loading</option><option value="total">Total issues</option><option value="active_uips">Active IPS</option><option value="active_hsd">Active HSD</option><option value="jira">Jira</option><option value="name">Name</option></select></label><div class="team-filter" role="group" aria-label="Filter by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div><div class="table-wrap"><table class="sortable-table"><thead id="table-head"></thead><tbody id="table-body"></tbody><tfoot id="table-foot"></tfoot></table></div><div class="empty" id="empty" hidden><p id="empty-message"></p><button class="clear-filters" type="button" id="clear-filters">Clear filters</button></div></section>
+    <section class="panel oem-panel" aria-labelledby="oem-title"><div class="panel-head"><h2 id="oem-title">Team loading by OEM</h2></div><div class="table-wrap oem-table-wrap"><table class="oem-table"><thead><tr><th scope="col">OEM</th><th scope="col">Engineers</th><th scope="col">Active issues</th><th scope="col">Weighted loading</th></tr></thead><tbody id="oem-table-body"></tbody></table></div></section>
       <p class="footnote">Weighted Loading uses active IPS, Jira, and active HSD only. Active HSD = uHSD - Stale HSD.</p>
     </section>
   </main>
@@ -307,6 +317,7 @@
       bt: new Set(['matt chen', 'steven1 chen', 'yu-wei chen', 'wesley kuo', 'bingyue sun', 'juan zou', 'brenton wu'])
     };
     let currentTeamFilter = ['wifi', 'bt'].includes(savedViewState.team) ? savedViewState.team : 'all';
+    let currentOemFilter = typeof savedViewState.oem === 'string' ? savedViewState.oem : '';
     document.querySelector('#name-filter').value = savedViewState.name || '';
     const loadingSortKeys = ['weighted_loading_value', 'total', 'active_uips', 'active_hsd', 'jira', 'name'];
     document.querySelector('#sort-filter').value = loadingSortKeys.includes(savedViewState.sort) ? savedViewState.sort : 'weighted_loading_value';
@@ -335,7 +346,7 @@
       const toast = document.querySelector('#toast'); toast.textContent = message; toast.hidden = false; window.clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { toast.hidden = true; }, 5000);
     }
     function saveViewState() {
-      savedViewState = { name: document.querySelector('#name-filter').value, category: document.querySelector('#category-filter').value, sort: document.querySelector('#sort-filter').value, team: currentTeamFilter };
+      savedViewState = { name: document.querySelector('#name-filter').value, category: document.querySelector('#category-filter').value, sort: document.querySelector('#sort-filter').value, team: currentTeamFilter, oem: currentOemFilter };
       sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(savedViewState));
     }
     function sortHeader(label, key, state) {
@@ -368,11 +379,32 @@
       return activityValueCollator.compare(leftText, rightText);
     }
     function renderSnapshot() {
+      const oemTotals = new Map();
+      currentSnapshot.rows.forEach(row => {
+        const engineerKey = String(row.name || '').trim().toLowerCase();
+        (Array.isArray(row.issue_details) ? row.issue_details : []).forEach(issue => {
+          const oem = String(issue.customer || '').trim();
+          if (!oem || oem.toLowerCase() === 'na') return;
+          const key = oem.toLowerCase();
+          const aggregate = oemTotals.get(key) || { name: oem, engineers: new Set(), issues: 0, weighted: 0 };
+          if (engineerKey) aggregate.engineers.add(engineerKey);
+          aggregate.issues += 1;
+          const issueWeight = Number(issue.issue_weight ?? (issue.source_type === 'hsd' ? 1 : 0));
+          if (Number.isFinite(issueWeight)) aggregate.weighted += issueWeight;
+          oemTotals.set(key, aggregate);
+        });
+      });
+      if (currentOemFilter && !oemTotals.has(currentOemFilter.toLowerCase())) currentOemFilter = '';
+      const oemRows = [...oemTotals.entries()].sort((left, right) => left[1].name.localeCompare(right[1].name));
+      document.querySelector('#oem-table-body').innerHTML = oemRows.length
+        ? oemRows.map(([key, aggregate]) => `<tr><td><button class="oem-select-button" type="button" data-oem="${esc(key)}" aria-pressed="${String(key === currentOemFilter.toLowerCase())}">${esc(aggregate.name)}</button></td><td>${aggregate.engineers.size}</td><td>${aggregate.issues}</td><td>${money(aggregate.weighted)}</td></tr>`).join('')
+        : '<tr><td colspan="4" class="oem-empty">OEM details are unavailable in this loading snapshot.</td></tr>';
       const rows = currentSnapshot.rows.filter(row => {
         const nameMatch = String(row.name || '').toLowerCase().includes(document.querySelector('#name-filter').value.toLowerCase());
         const category = document.querySelector('#category-filter').value;
         const teamMatch = currentTeamFilter === 'all' || TEAM_MEMBERS[currentTeamFilter].has(String(row.name || '').trim().toLowerCase());
-        return nameMatch && teamMatch && (!category || Number(row.category_counts?.[category] || 0) > 0);
+        const oemMatch = !currentOemFilter || (Array.isArray(row.issue_details) && row.issue_details.some(issue => String(issue.customer || '').trim().toLowerCase() === currentOemFilter.toLowerCase()));
+        return nameMatch && teamMatch && oemMatch && (!category || Number(row.category_counts?.[category] || 0) > 0);
       }).sort((left, right) => {
         const key = loadingSortState.key;
         const value = row => key === 'active_uips'
@@ -877,6 +909,12 @@
         });
     document.querySelector('#name-filter').addEventListener('input', () => { saveViewState(); renderSnapshot(); });
     document.querySelector('#category-filter').addEventListener('change', () => { saveViewState(); renderSnapshot(); });
+    document.querySelector('#oem-table-body').addEventListener('click', event => {
+      const button = event.target.closest('button[data-oem]');
+      if (!button) return;
+      currentOemFilter = button.dataset.oem === currentOemFilter.toLowerCase() ? '' : button.dataset.oem;
+      saveViewState(); renderSnapshot();
+    });
         document.querySelector('#sort-filter').addEventListener('change', event => {
           loadingSortState.key = event.target.value;
           loadingSortState.direction = loadingSortState.key === 'name' ? 'asc' : 'desc';
@@ -901,7 +939,7 @@
       document.querySelectorAll('.team-filter button').forEach(option => { option.setAttribute('aria-pressed', String(option === button)); });
       saveViewState(); renderSnapshot(); renderYearlyTable('engineers', 'engineer');
     });
-    document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
+    document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; currentOemFilter = ''; document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
     runButton.addEventListener('click', runBatch);
     document.querySelector('#show-weights').addEventListener('click', showWeights);
     document.querySelector('#close-weights').addEventListener('click', () => document.querySelector('#weights-modal').close());

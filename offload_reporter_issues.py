@@ -2340,6 +2340,7 @@ def _get_unpromoted_ips_rows_for_weighting(
     else:
         technology_expr = "NULL"
     title_expr = _title_expr(columns)
+    customer_expr = "customer" if _has(columns, "customer") else "NULL"
     # Same match as the Field Issues page (loading_dashboard._load_field_issues).
     field_issue_parts = [
         f"COALESCE({name}::text, '') ILIKE '%field issue%'"
@@ -2358,6 +2359,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             MAX(ips_issue_created_date) AS created,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
+            MAX(COALESCE(customer::text, '')) AS customer,
             BOOL_OR(COALESCE(is_field_issue, FALSE)) AS is_field_issue,
                         BOOL_OR(COALESCE(is_stale, FALSE)) AS is_stale,
                         BOOL_OR(COALESCE(is_close_pending, FALSE)) AS is_close_pending,
@@ -2382,6 +2384,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             MAX(jira_issue_created_date) AS created,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
+            MAX(COALESCE(customer::text, '')) AS customer,
             BOOL_OR(COALESCE(is_field_issue, FALSE)) AS is_field_issue,
             FALSE AS is_stale,
             FALSE AS is_close_pending,
@@ -2404,6 +2407,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             MAX(hsd_issue_created_date) AS created,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
+            MAX(COALESCE(customer::text, '')) AS customer,
             BOOL_OR(COALESCE(is_field_issue, FALSE)) AS is_field_issue,
             FALSE AS is_stale,
             FALSE AS is_close_pending,
@@ -2442,6 +2446,7 @@ def _get_unpromoted_ips_rows_for_weighting(
                 {hsd_status_reason_expr} AS hsd_status_reason,
                 {hsd_id_expr} AS hsd_id,
                 {technology_expr} AS technology,
+                {customer_expr} AS customer,
                 {unpromoted_ips_cond} AS is_unpromoted_ips,
                 {num_jira} AS is_jira,
                 {num_unpromoted_hsd} AS is_unpromoted_hsd,
@@ -2604,6 +2609,7 @@ def _build_weighted_summary(
             "ips_title": str(row.get("title") or "").strip(),
             "hsd_id": str(row.get("hsd_id") or "").strip(),
             "jira_id": str(row.get("jira_id") or "").strip(),
+            "customer": str(row.get("customer") or "").strip(),
             "created": created,
         })
 
