@@ -260,7 +260,7 @@
     </section>
     <section class="panel yearly-panel" id="yearly-view" role="tabpanel" aria-labelledby="yearly-tab" hidden>
       <div class="panel-head"><h2>Yearly issue dashboard</h2><span id="yearly-status" role="status" aria-live="polite">Select a year to load data.</span></div>
-      <div class="toolbar yearly-toolbar"><label>Created year <select id="yearly-year" aria-label="Select issue creation year"><option value="">Loading years...</option></select></label><label>Sort <select id="yearly-sort-filter"><option value="weighted_loading">Weighted loading</option><option value="total_issue_count">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" id="yearly-team-filter" role="group" aria-label="Filter engineers by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div>
+      <div class="toolbar yearly-toolbar"><label>Created year <select id="yearly-year" aria-label="Select issue creation year"><option value="">Loading years...</option></select></label><label>Search <input id="yearly-search" type="search" placeholder="Engineer or customer" aria-label="Search engineer or customer"></label><label>Sort <select id="yearly-sort-filter"><option value="weighted_loading">Weighted loading</option><option value="total_issue_count">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" id="yearly-team-filter" role="group" aria-label="Filter engineers by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div>
       <p class="yearly-note" id="yearly-note" role="status" aria-live="polite"></p>
       <h3 class="yearly-section-title">Team loading by engineer</h3>
       <div class="table-wrap yearly-table-wrap"><table class="activity-table yearly-table"><thead id="yearly-engineer-head"></thead><tbody id="yearly-engineer-body"></tbody><tfoot id="yearly-engineer-foot"></tfoot></table></div>
@@ -319,10 +319,17 @@
     let currentTeamFilter = ['wifi', 'bt'].includes(savedViewState.team) ? savedViewState.team : 'all';
     let currentOemFilter = typeof savedViewState.oem === 'string' ? savedViewState.oem : '';
     document.querySelector('#name-filter').value = savedViewState.name || '';
+    let currentYearlyTeamFilter = ['wifi', 'bt'].includes(savedViewState.yearlyTeam) ? savedViewState.yearlyTeam : 'all';
+    document.querySelector('#yearly-search').value = savedViewState.yearlySearch || '';
+    const yearlySortableKeys = ['name', 'total_ips', 'promoted_ips', 'not_promoted_ips', 'total_hsd', 'not_promoted_hsd', 'jira_count', 'total_issue_count', 'jira_triage_rate', 'driver_fixed_rate', 'fixed_jira', 'good_bug_ratio', 'weighted_loading'];
+    const yearlyEngineerSort = yearlySortableKeys.includes(savedViewState.yearlyEngineerSort) ? savedViewState.yearlyEngineerSort : 'weighted_loading';
+    const yearlyCustomerSort = yearlySortableKeys.includes(savedViewState.yearlyCustomerSort) ? savedViewState.yearlyCustomerSort : 'weighted_loading';
+    document.querySelector('#yearly-sort-filter').value = ['weighted_loading', 'total_issue_count', 'name'].includes(yearlyEngineerSort) ? yearlyEngineerSort : 'weighted_loading';
     const loadingSortKeys = ['weighted_loading_value', 'total', 'active_uips', 'active_hsd', 'jira', 'name'];
     document.querySelector('#sort-filter').value = loadingSortKeys.includes(savedViewState.sort) ? savedViewState.sort : 'weighted_loading_value';
     const loadingSortState = { key: document.querySelector('#sort-filter').value, direction: document.querySelector('#sort-filter').value === 'name' ? 'asc' : 'desc', clickedKey: null };
-    document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === currentTeamFilter)); });
+    document.querySelectorAll('.team-filter:not(#yearly-team-filter) button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === currentTeamFilter)); });
+    document.querySelectorAll('#yearly-team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === currentYearlyTeamFilter)); });
     let currentSnapshot = { rows: [], categories: [] };
     let currentActivity = { sheets: [] };
     const activitySortState = { key: null, direction: 'desc', clickedKey: null };
@@ -333,8 +340,8 @@
     let yearlyLoaded = false;
     let currentYearlyIssues = null;
     const yearlySortStates = {
-      engineer: { key: 'weighted_loading', direction: 'desc', clickedKey: null },
-      customer: { key: 'weighted_loading', direction: 'desc', clickedKey: null },
+      engineer: { key: yearlyEngineerSort, direction: yearlyEngineerSort === 'name' ? 'asc' : 'desc', clickedKey: null },
+      customer: { key: yearlyCustomerSort, direction: yearlyCustomerSort === 'name' ? 'asc' : 'desc', clickedKey: null },
     };
     const turnaroundSortStates = {
       reporter: { key: 'ips_tat_till_jira_hours', direction: 'desc', clickedKey: null },
@@ -346,7 +353,11 @@
       const toast = document.querySelector('#toast'); toast.textContent = message; toast.hidden = false; window.clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { toast.hidden = true; }, 5000);
     }
     function saveViewState() {
-      savedViewState = { name: document.querySelector('#name-filter').value, category: document.querySelector('#category-filter').value, sort: document.querySelector('#sort-filter').value, team: currentTeamFilter, oem: currentOemFilter };
+      savedViewState = { ...savedViewState, name: document.querySelector('#name-filter').value, category: document.querySelector('#category-filter').value, sort: document.querySelector('#sort-filter').value, team: currentTeamFilter, oem: currentOemFilter };
+      sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(savedViewState));
+    }
+    function saveYearlyViewState() {
+      savedViewState = { ...savedViewState, yearlyYear: document.querySelector('#yearly-year').value, yearlySearch: document.querySelector('#yearly-search').value, yearlyTeam: currentYearlyTeamFilter, yearlyEngineerSort: yearlySortStates.engineer.key, yearlyCustomerSort: yearlySortStates.customer.key };
       sessionStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(savedViewState));
     }
     function sortHeader(label, key, state) {
@@ -531,7 +542,12 @@
               ['Driver Fixed Rate', 'driver_fixed_rate'], ['Fixed Jira', 'fixed_jira'],
               ['Good Bug%', 'good_bug_ratio'], ['Weighted loading', 'weighted_loading'],
             ];
-            const rows = result.groups.filter(row => tableName !== 'engineer' || currentTeamFilter === 'all' || TEAM_MEMBERS[currentTeamFilter].has(String(row.name || '').trim().toLowerCase()));
+            const search = document.querySelector('#yearly-search').value.trim().toLowerCase();
+            const rows = result.groups.filter(row => {
+              const nameMatch = String(row.name || '').toLowerCase().includes(search);
+              const teamMatch = tableName !== 'engineer' || currentYearlyTeamFilter === 'all' || TEAM_MEMBERS[currentYearlyTeamFilter].has(String(row.name || '').trim().toLowerCase());
+              return nameMatch && teamMatch;
+            });
             const sortState = yearlySortStates[tableName];
             const sortKey = sortState.key;
             rows.sort((left, right) => {
@@ -729,6 +745,7 @@
                 }
                 select.value = String(result.selected_year);
               });
+              saveYearlyViewState();
               currentYearlyIssues = result;
               const projectSelect = document.querySelector('#tat-project-filter');
               const selectedProject = projectSelect.value;
@@ -763,7 +780,7 @@
             document.querySelector('#yearly-view').hidden = view !== 'yearly';
             document.querySelector('#turnaround-view').hidden = !turnaround;
             if (activity && !currentActivity.sheets.length) loadActivity();
-            if ((view === 'yearly' || turnaround) && !yearlyLoaded) loadYearlyIssues();
+            if ((view === 'yearly' || turnaround) && !yearlyLoaded) loadYearlyIssues(document.querySelector('#yearly-year').value || savedViewState.yearlyYear || '');
             if (turnaround && yearlyLoaded) renderTurnaround();
           }
     async function loadSnapshot() {
@@ -887,6 +904,7 @@
               clickedKey: null,
             };
           });
+          saveYearlyViewState();
           renderYearlyTable('engineers', 'engineer'); renderYearlyTable('customers', 'customer');
         });
         ['engineer', 'customer'].forEach(tableName => {
@@ -899,16 +917,21 @@
             state.key = sortKey;
             state.direction = isRepeatedClick && state.direction === 'desc' ? 'asc' : 'desc';
             state.clickedKey = sortKey;
-            document.querySelector('#yearly-sort-filter').value = sortKey;
+            if ([...document.querySelector('#yearly-sort-filter').options].some(option => option.value === sortKey)) document.querySelector('#yearly-sort-filter').value = sortKey;
+            saveYearlyViewState();
             renderYearlyTable(tableName === 'engineer' ? 'engineers' : 'customers', tableName);
           });
         });
         document.querySelector('#yearly-team-filter').addEventListener('click', event => {
           const button = event.target.closest('button[data-team]'); if (!button) return;
-          currentTeamFilter = button.dataset.team;
-          document.querySelectorAll('.team-filter button').forEach(option => { option.setAttribute('aria-pressed', String(option.dataset.team === currentTeamFilter)); });
-          saveViewState(); renderSnapshot(); renderYearlyTable('engineers', 'engineer');
+          currentYearlyTeamFilter = button.dataset.team;
+          document.querySelectorAll('#yearly-team-filter button').forEach(option => { option.setAttribute('aria-pressed', String(option.dataset.team === currentYearlyTeamFilter)); });
+          saveYearlyViewState(); renderYearlyTable('engineers', 'engineer');
         });
+        document.querySelector('#yearly-search').addEventListener('input', () => {
+          saveYearlyViewState(); renderYearlyTable('engineers', 'engineer'); renderYearlyTable('customers', 'customer');
+        });
+        document.querySelector('#yearly-year').addEventListener('change', event => { saveYearlyViewState(); loadYearlyIssues(event.target.value); });
         document.querySelector('#table-head').addEventListener('click', event => {
           const button = event.target.closest('button[data-sort-key]');
           if (!button) return;
@@ -943,13 +966,13 @@
             renderTurnaround();
           });
         });
-    document.querySelector('.team-filter').addEventListener('click', event => {
+    document.querySelector('#loading-view .team-filter').addEventListener('click', event => {
       const button = event.target.closest('button[data-team]'); if (!button) return;
       currentTeamFilter = button.dataset.team;
-      document.querySelectorAll('.team-filter button').forEach(option => { option.setAttribute('aria-pressed', String(option === button)); });
+      document.querySelectorAll('.team-filter:not(#yearly-team-filter) button').forEach(option => { option.setAttribute('aria-pressed', String(option.dataset.team === currentTeamFilter)); });
       saveViewState(); renderSnapshot(); renderYearlyTable('engineers', 'engineer');
     });
-    document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; currentOemFilter = ''; currentEngineerOemFilter = ''; document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
+    document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; currentOemFilter = ''; currentEngineerOemFilter = ''; document.querySelectorAll('.team-filter:not(#yearly-team-filter) button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
     runButton.addEventListener('click', runBatch);
     document.querySelector('#show-weights').addEventListener('click', showWeights);
     document.querySelector('#close-weights').addEventListener('click', () => document.querySelector('#weights-modal').close());
