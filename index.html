@@ -378,7 +378,8 @@
       }
       return activityValueCollator.compare(leftText, rightText);
     }
-    function renderSnapshot() {
+    let currentEngineerOemFilter = '';
+    function renderOemTable() {
       const oemTotals = new Map();
       currentSnapshot.rows.forEach(row => {
         const engineerKey = String(row.name || '').trim().toLowerCase();
@@ -396,9 +397,18 @@
       });
       if (currentOemFilter && !oemTotals.has(currentOemFilter.toLowerCase())) currentOemFilter = '';
       const oemRows = [...oemTotals.entries()].sort((left, right) => left[1].name.localeCompare(right[1].name));
-      document.querySelector('#oem-table-body').innerHTML = oemRows.length
-        ? oemRows.map(([key, aggregate]) => `<tr><td><button class="oem-select-button" type="button" data-oem="${esc(key)}" aria-pressed="${String(key === currentOemFilter.toLowerCase())}">${esc(aggregate.name)}</button></td><td>${aggregate.engineers.size}</td><td>${aggregate.issues}</td><td>${money(aggregate.weighted)}</td></tr>`).join('')
-        : '<tr><td colspan="4" class="oem-empty">OEM details are unavailable in this loading snapshot.</td></tr>';
+      const selectedEngineer = currentSnapshot.rows.find(row => String(row.name || '').trim().toLowerCase() === currentEngineerOemFilter);
+      if (currentEngineerOemFilter && !selectedEngineer) currentEngineerOemFilter = '';
+      const engineerOems = new Set((selectedEngineer?.issue_details || [])
+        .map(issue => String(issue.customer || '').trim().toLowerCase())
+        .filter(oem => oem && oem !== 'na'));
+      const visibleOemRows = currentEngineerOemFilter ? oemRows.filter(([key]) => engineerOems.has(key)) : oemRows;
+      document.querySelector('#oem-table-body').innerHTML = visibleOemRows.length
+        ? visibleOemRows.map(([key, aggregate]) => `<tr><td><button class="oem-select-button" type="button" data-oem="${esc(key)}" aria-pressed="${String(key === currentOemFilter.toLowerCase())}">${esc(aggregate.name)}</button></td><td>${aggregate.engineers.size}</td><td>${aggregate.issues}</td><td>${money(aggregate.weighted)}</td></tr>`).join('')
+        : `<tr><td colspan="4" class="oem-empty">${currentEngineerOemFilter ? 'No OEM issue details for this engineer.' : 'OEM details are unavailable in this loading snapshot.'}</td></tr>`;
+    }
+    function renderSnapshot() {
+      renderOemTable();
       const rows = currentSnapshot.rows.filter(row => {
         const nameMatch = String(row.name || '').toLowerCase().includes(document.querySelector('#name-filter').value.toLowerCase());
         const category = document.querySelector('#category-filter').value;
@@ -939,13 +949,16 @@
       document.querySelectorAll('.team-filter button').forEach(option => { option.setAttribute('aria-pressed', String(option === button)); });
       saveViewState(); renderSnapshot(); renderYearlyTable('engineers', 'engineer');
     });
-    document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; currentOemFilter = ''; document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
+    document.querySelector('#clear-filters').addEventListener('click', () => { document.querySelector('#name-filter').value = ''; document.querySelector('#category-filter').value = ''; currentTeamFilter = 'all'; currentOemFilter = ''; currentEngineerOemFilter = ''; document.querySelectorAll('.team-filter button').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.team === 'all')); }); saveViewState(); renderSnapshot(); document.querySelector('#name-filter').focus(); });
     runButton.addEventListener('click', runBatch);
     document.querySelector('#show-weights').addEventListener('click', showWeights);
     document.querySelector('#close-weights').addEventListener('click', () => document.querySelector('#weights-modal').close());
     document.querySelector('#table-body').addEventListener('click', event => {
       const issueButton = event.target.closest('.member-name-button');
       if (issueButton) {
+        const engineerName = String(issueButton.textContent || '').trim().toLowerCase();
+        currentEngineerOemFilter = currentEngineerOemFilter === engineerName ? '' : engineerName;
+        renderOemTable();
         const detail = document.getElementById(issueButton.dataset.issueDetailId);
         const expanded = issueButton.getAttribute('aria-expanded') === 'true';
         const categoryButton = issueButton.closest('tr').querySelector('.expand-button');
