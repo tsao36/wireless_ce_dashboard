@@ -570,29 +570,48 @@ def _load_yearly_issues(
     )
     try:
         with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = %s AND table_schema = ANY(current_schemas(false))",
-                (source_table,),
-            )
-            available = {row[0] for row in cursor.fetchall()}
-            if "ips_created_date" not in available:
-                raise RuntimeError(f"ips_created_date is not available in {source_table}")
+            source_tables = [source_table]
+            if source_table == TEAM_LOADING_TEST_TABLE:
+                source_tables.append(FIELD_ISSUE_TABLE)
 
-            bug_created_date = _yearly_bug_created_date_sql(available)
-            cursor.execute(
-                sql.SQL(
-                    "SELECT DISTINCT EXTRACT(YEAR FROM ({bug_created_date}))::int AS issue_year "
-                    "FROM {table} WHERE ({bug_created_date}) IS NOT NULL ORDER BY issue_year DESC"
-                ).format(table=sql.Identifier(source_table), bug_created_date=bug_created_date)
-            )
-            years = [int(row[0]) for row in cursor.fetchall() if row[0] is not None]
+            available_by_table: dict[str, set[str]] = {}
+            years_by_table: dict[str, list[int]] = {}
+            for table_name in dict.fromkeys(source_tables):
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = %s AND table_schema = ANY(current_schemas(false))",
+                    (table_name,),
+                )
+                available_by_table[table_name] = {row[0] for row in cursor.fetchall()}
+                available = available_by_table[table_name]
+                if "ips_created_date" not in available:
+                    if table_name == source_table:
+                        raise RuntimeError(f"ips_created_date is not available in {table_name}")
+                    years_by_table[table_name] = []
+                    continue
+
+                bug_created_date = _yearly_bug_created_date_sql(available)
+                cursor.execute(
+                    sql.SQL(
+                        "SELECT DISTINCT EXTRACT(YEAR FROM ({bug_created_date}))::int AS issue_year "
+                        "FROM {table} WHERE ({bug_created_date}) IS NOT NULL ORDER BY issue_year DESC"
+                    ).format(table=sql.Identifier(table_name), bug_created_date=bug_created_date)
+                )
+                years_by_table[table_name] = [
+                    int(row[0]) for row in cursor.fetchall() if row[0] is not None
+                ]
+            years = sorted({year for table_years in years_by_table.values() for year in table_years}, reverse=True)
             if selected_year is None:
                 selected_year = CURRENT_YEAR if CURRENT_YEAR in years else (years[0] if years else CURRENT_YEAR)
 
+            data_table = next(
+                (table for table in source_tables if selected_year in years_by_table.get(table, [])),
+                source_table,
+            )
+            available = available_by_table[data_table]
             records: list[dict] = []
             columns = [name for name in YEARLY_ISSUE_COLUMNS if name in available]
-            if selected_year in years:
+            if selected_year in years_by_table.get(data_table, []):
                 cursor.execute(
                     sql.SQL(
                         "SELECT {columns} FROM {table} "
@@ -600,8 +619,8 @@ def _load_yearly_issues(
                         "AND ({bug_created_date}) < make_date(%s, 1, 1)"
                     ).format(
                         columns=sql.SQL(", ").join(map(sql.Identifier, columns)),
-                        table=sql.Identifier(source_table),
-                        bug_created_date=bug_created_date,
+                        table=sql.Identifier(data_table),
+                        bug_created_date=_yearly_bug_created_date_sql(available),
                     ),
                     (selected_year, selected_year + 1),
                 )
@@ -634,7 +653,7 @@ def _load_yearly_issues(
         else [],
         "ips_closure_missing_columns": [] if "ips_closed_date" in available else ["ips_closed_date"],
         "turnaround_missing_columns": sorted(set(TURNAROUND_DURATION_FIELDS) - available),
-        "source_table": source_table,
+        "source_table": data_table,
         "weighting_message": engineer_note or customer_note,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }
