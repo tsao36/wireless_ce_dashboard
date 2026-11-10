@@ -1154,6 +1154,78 @@ def calculate_weight_for_category(
     return float(category_weights.get(cat_key, default_weight))
 
 
+def _batch_dual_feature_predictions(
+    rows: List[Dict[str, Any]], model_bundle: Dict[str, Any]
+) -> List[Tuple[str, float]]:
+    predictions: List[Tuple[str, float] | None] = [None] * len(rows)
+    model_positions: List[int] = []
+    title_records: List[Dict[str, Any]] = []
+    detail_records: List[Dict[str, Any]] = []
+    detail_positions: List[int] = []
+
+    for position, row in enumerate(rows):
+        title = _clean_text(row.get("title"))
+        technology = _clean_text(row.get("technology"))
+        rule_category = _tier1_rule_category(title, technology)
+        if rule_category:
+            predictions[position] = (rule_category, 1.0)
+            continue
+
+        description = _clean_text(
+            row.get("description") or row.get("ips_description") or row.get("jira_description")
+        )
+        context = extract_structured_ips_context(title, description, "")
+        model_positions.append(position)
+        title_records.append(build_issue_feature_record(title, technology))
+        if context.get("ml_context"):
+            detail_positions.append(position)
+            detail_records.append(build_issue_feature_record(title, technology, context))
+
+    if model_positions:
+        title_model = model_bundle["model_title_only"]
+        title_probabilities = title_model.predict_proba(title_records)
+        categories = [str(label) for label in title_model.classes_]
+        detail_model = model_bundle["model_with_details"]
+        detail_local_positions = {position: index for index, position in enumerate(detail_positions)}
+        if detail_records:
+            detail_probabilities = detail_model.predict_proba(detail_records)
+            detail_indexes = {str(label): index for index, label in enumerate(detail_model.classes_)}
+            blend_weights = model_bundle.get("detail_blend_weights") or {
+                "title_only": 0.6,
+                "with_details": 0.4,
+            }
+        else:
+            detail_probabilities = []
+            detail_indexes = {}
+            blend_weights = {}
+
+        for local_position, row_position in enumerate(model_positions):
+            probabilities = title_probabilities[local_position]
+            detail_position = detail_local_positions.get(row_position)
+            if detail_position is not None:
+                detail_row = detail_probabilities[detail_position]
+                probabilities = np.asarray([
+                    float(blend_weights["title_only"]) * float(probabilities[index])
+                    + float(blend_weights["with_details"])
+                    * float(detail_row[detail_indexes[category]])
+                    if category in detail_indexes
+                    else float(blend_weights["title_only"]) * float(probabilities[index])
+                    for index, category in enumerate(categories)
+                ])
+                total = float(probabilities.sum())
+                if total:
+                    probabilities /= total
+
+            winner = int(probabilities.argmax())
+            confidence = float(probabilities[winner])
+            predictions[row_position] = (
+                _normalize_predicted_category(categories[winner]),
+                confidence,
+            )
+
+    return [prediction for prediction in predictions if prediction is not None]
+
+
 def classify_and_weight_rows(
     rows: Iterable[Dict[str, Any]],
     *,
@@ -1162,19 +1234,27 @@ def classify_and_weight_rows(
     category_technology_weights: Dict[str, float],
     default_weight: float,
 ) -> List[Dict[str, Any]]:
+    source_rows = list(rows)
+    batch_predictions = None
+    if model_bundle.get("feature_mode") == "dual_structured_v2" and _PREDICT_BACKEND == "ml":
+        batch_predictions = _batch_dual_feature_predictions(source_rows, model_bundle)
+
     output: List[Dict[str, Any]] = []
-    for row in rows:
+    for position, row in enumerate(source_rows):
         title = _clean_text(row.get("title"))
         description = _clean_text(row.get("description") or row.get("ips_description") or row.get("jira_description"))
         llm_pred = _clean_text(row.get("predicted_category"))
         tech = _clean_text(row.get("technology"))
-        category, confidence = classify_issue_title(
-            model_bundle,
-            title,
-            predicted_category=llm_pred,
-            technology=tech,
-            description=description,
-        )
+        if batch_predictions is None:
+            category, confidence = classify_issue_title(
+                model_bundle,
+                title,
+                predicted_category=llm_pred,
+                technology=tech,
+                description=description,
+            )
+        else:
+            category, confidence = batch_predictions[position]
 
         # Rule override: BT issues containing "mute" should be treated as Audio.
         if _norm_technology(tech) == "bt" and "mute" in title.lower():

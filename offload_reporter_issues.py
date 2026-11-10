@@ -12,6 +12,8 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -61,6 +63,9 @@ def _setup_logging(level: str = "INFO") -> None:
 
 # Dedupe no longer needed if ips_jira_bugs is unique per key.
 USE_DEDUP = False
+_TABLE_COLUMNS_CACHE: dict[tuple[str, str], tuple[float, set[str]]] = {}
+_TABLE_COLUMNS_CACHE_TTL_SECONDS = 60.0
+_TABLE_COLUMNS_CACHE_LOCK = threading.Lock()
 
 ALLOWED_REPORTERS = [
     "Brenton Wu",
@@ -449,13 +454,27 @@ def _ips_without_jira_link_expr(columns: set[str]) -> str:
 
 def _get_table_columns(db: DbConnector, table: str) -> set[str]:
     schema, name = _split_table(table)
-    query = """
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_schema = %s AND table_name = %s;
-    """
-    rows = db.query_rows(query, [schema, name])
-    return {str(r.get("column_name") or "").lower() for r in rows if r.get("column_name")}
+    cache_key = (schema, name)
+    now = time.monotonic()
+    with _TABLE_COLUMNS_CACHE_LOCK:
+        cached = _TABLE_COLUMNS_CACHE.get(cache_key)
+        if cached is not None and now - cached[0] < _TABLE_COLUMNS_CACHE_TTL_SECONDS:
+            return set(cached[1])
+
+    get_cached_columns = getattr(db, "get_table_columns", None)
+    if callable(get_cached_columns):
+        columns = get_cached_columns(schema, name)
+    else:
+        query = """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s;
+        """
+        rows = db.query_rows(query, [schema, name])
+        columns = {str(r.get("column_name") or "").lower() for r in rows if r.get("column_name")}
+    with _TABLE_COLUMNS_CACHE_LOCK:
+        _TABLE_COLUMNS_CACHE[cache_key] = (time.monotonic(), set(columns))
+    return columns
 
 
 def _has(columns: set[str], name: str) -> bool:
@@ -2489,6 +2508,7 @@ def _build_weighted_summary(
     model_path: str,
     weight_map_path: str,
     count_profile: str = "offload",
+    model_config: Optional[Tuple[Dict[str, Any], Tuple[Dict[str, Any], Dict[str, Any], float]]] = None,
 ) -> Tuple[Dict[str, Dict[str, float]], List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
     try:
         from issue_category_model import (
@@ -2505,8 +2525,11 @@ def _build_weighted_summary(
         return {}, [], {}
 
     try:
-        model_bundle = load_category_model(model_path)
-        category_weights, category_technology_weights, default_weight = load_weight_map(weight_map_path)
+        if model_config is None:
+            model_bundle = load_category_model(model_path)
+            category_weights, category_technology_weights, default_weight = load_weight_map(weight_map_path)
+        else:
+            model_bundle, (category_weights, category_technology_weights, default_weight) = model_config
     except Exception as exc:
         LOG.warning("Category weighting disabled (model/weight load failed): %s", exc)
         return {}, [], {}

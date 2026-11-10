@@ -1842,26 +1842,36 @@ class DbConnector:
     Postgres DB connector, to be merged later with DatabaseAPI module
     """
 
-    def __init__(self):
+    def __init__(self, connection: Any | None = None):
         log.info("CTOR - DbConnector")
-        self.__connection = None
+        self.__connection = connection
         self.__cursor = None
+        self.__owns_connection = connection is None
+        self.__table_columns_cache: dict[tuple[str, str], set[str]] = {}
 
-        # open connection to DB
-        self.__open_db_connection()
+        if connection is None:
+            self.__open_db_connection()
+        else:
+            self.__cursor = connection.cursor()
 
     def __del__(self):
         log.info("DTOR - DbConnector")
+        self.close()
+
+    def close(self) -> None:
         try:
             if self.__cursor:
                 self.__cursor.close()
         except Exception as e:
             log.warning("Failed to close DB cursor: %s", e)
         try:
-            if self.__connection:
+            if self.__connection and self.__owns_connection:
                 self.__connection.close()
         except Exception as e:
             log.warning("Failed to close DB connection: %s", e)
+        self.__cursor = None
+        if self.__owns_connection:
+            self.__connection = None
 
 
     def __get_table_data(self, table: str) -> list:
@@ -2358,6 +2368,21 @@ class DbConnector:
         col_names = [x[0] for x in self.__cursor.description] if self.__cursor.description else []
         return [dict(zip(col_names, list(result))) for result in rows]
 
+    def get_table_columns(self, schema: str, table: str) -> set[str]:
+        key = (schema.strip().lower(), table.strip().lower())
+        if key not in self.__table_columns_cache:
+            rows = self.query_rows(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = %s AND table_name = %s",
+                key,
+            )
+            self.__table_columns_cache[key] = {
+                str(row.get("column_name") or "").lower()
+                for row in rows
+                if row.get("column_name")
+            }
+        return set(self.__table_columns_cache[key])
+
     def __open_db_connection(self):
         """
         open the connection to the postgres customer engineering DB
@@ -2412,9 +2437,6 @@ class DbConnector:
         # Keep dependent views (e.g. un_promoted_hsd) intact; fallback to TRUNCATE is handled by caller
         self.__cursor.execute(f'DROP TABLE IF EXISTS "{table_name}"')
 
-        # commit changes
-        self.__connection.commit()
-
     def __create_table(self, table_name: str, table_structure: list) -> None:
         """
         create a new table in the DB
@@ -2456,9 +2478,6 @@ class DbConnector:
         log.info("create a new table using the following query:")
         log.info(query_string)
         self.__cursor.execute(query_string)
-
-        # commit changes
-        self.__connection.commit()
 
     def __get_table_fields_for_db(self, data_obj: object) -> list:
         """
@@ -2527,6 +2546,38 @@ class DbConnector:
                 )
 
         return temp_data_list
+
+    def __ensure_yearly_issue_indexes(self, table_name: str, column_names: set[str]) -> None:
+        required_columns = {
+            "ips_case_number",
+            "ips_created_date",
+            "jira_created_date",
+            "hsd_submitted_date",
+        }
+        if table_name != "ips_jira_bugs" or not required_columns.issubset(column_names):
+            return
+
+        created_date = (
+            "(CASE WHEN TRIM(COALESCE(ips_case_number::text, '')) "
+            "~ '^[0-9]*[1-9][0-9]*$' "
+            "THEN COALESCE(ips_created_date, jira_created_date) "
+            "WHEN hsd_submitted_date IS NOT NULL THEN hsd_submitted_date "
+            "ELSE jira_created_date END)"
+        )
+        try:
+            self.__cursor.execute(
+                f'CREATE INDEX IF NOT EXISTS "ips_jira_bugs_year_issue_date_idx" '
+                f'ON "{table_name}" ({created_date})'
+            )
+            self.__cursor.execute(
+                f'CREATE INDEX IF NOT EXISTS "ips_jira_bugs_year_issue_year_idx" '
+                f'ON "{table_name}" ((EXTRACT(YEAR FROM {created_date})::int))'
+            )
+            self.__cursor.execute(f'ANALYZE "{table_name}"')
+            self.__connection.commit()
+        except Exception:
+            self.__connection.rollback()
+            log.exception("Could not create yearly issue indexes on %s", table_name)
 
     def insert_to_table(
         self,
@@ -2665,7 +2716,6 @@ class DbConnector:
             if where_parts:
                 delete_sql = f"DELETE FROM {table_name} WHERE " + " OR ".join(where_parts)
                 self.__cursor.execute(delete_sql, params)
-                self.__connection.commit()
 
         # delete existing table if needed
         if is_delete_existing_table:
@@ -2682,13 +2732,11 @@ class DbConnector:
                 )
                 self.__connection.rollback()
                 self.__cursor.execute(f'TRUNCATE TABLE "{table_name}" RESTART IDENTITY')
-                self.__connection.commit()
             except Exception as exc:
                 # If recreate fails for any other reason, try a truncate so we never append.
                 log.warning("Failed to recreate %s (%s); attempting TRUNCATE instead.", table_name, exc)
                 self.__connection.rollback()
                 self.__cursor.execute(f'TRUNCATE TABLE "{table_name}" RESTART IDENTITY')
-                self.__connection.commit()
 
         # If recreate was requested but we had to fall back to TRUNCATE,
         # align insert columns with existing table and add missing ones when allowed.
@@ -2736,6 +2784,7 @@ class DbConnector:
                 page_size=opt.db_batch_page_size,
             )
             self.__connection.commit()
+            self.__ensure_yearly_issue_indexes(table_name, set(field_names))
             log.info("update is complete. %s rows were inserted", len(rows))
             try:
                 self.__cursor.execute(f'SELECT COUNT(*) FROM "{table_name}"')
@@ -2765,6 +2814,7 @@ class DbConnector:
             self.__cursor.execute(query_string)
 
         self.__connection.commit()
+        self.__ensure_yearly_issue_indexes(table_name, set(field_names))
         log.info("update is complete. %s rows were inserted", len(sql_strings))
         try:
             self.__cursor.execute(f'SELECT COUNT(*) FROM "{table_name}"')

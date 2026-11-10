@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from psycopg2 import sql
+from psycopg2.pool import ThreadedConnectionPool
 
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env", override=False)
@@ -71,6 +72,8 @@ BLOCKED_STATIC_PATHS = {
     if not str(path).startswith("\\\\")
 }
 CURRENT_YEAR = datetime.now().year
+YEARLY_DB_POOL: ThreadedConnectionPool | None = None
+YEARLY_DB_POOL_LOCK = threading.Lock()
 HISTORY_PATH = Path(os.environ.get("OFFLOAD_LOADING_HISTORY_DIR", str(ROOT / "loading_history")))
 if not HISTORY_PATH.is_absolute():
     HISTORY_PATH = ROOT / HISTORY_PATH
@@ -507,14 +510,31 @@ def _load_field_issues() -> dict:
     }
 
 
-def _yearly_weighted_loading(records: list[dict], group_field: str, year: int | None = None) -> tuple[dict[str, float], str]:
+def _yearly_weighted_loading(
+    records: list[dict],
+    group_field: str,
+    year: int | None = None,
+    shared_resources: dict[str, Any] | None = None,
+) -> tuple[dict[str, float], str]:
     annual_rows = yearly_weight_rows(records, group_field, year=year)
     if not annual_rows:
         return {}, ""
 
     try:
-        model_bundle = category_model.load_category_model(str(CATEGORY_MODEL_PATH))
-        category_weights, technology_weights, default_weight = category_model.load_weight_map(str(WEIGHT_MAP_PATH))
+        if shared_resources is None:
+            shared_resources = {}
+        if "error" in shared_resources:
+            raise shared_resources["error"]
+        if "config" not in shared_resources:
+            try:
+                shared_resources["config"] = (
+                    category_model.load_category_model(str(CATEGORY_MODEL_PATH)),
+                    category_model.load_weight_map(str(WEIGHT_MAP_PATH)),
+                )
+            except Exception as exc:
+                shared_resources["error"] = exc
+                raise
+        model_bundle, (category_weights, technology_weights, default_weight) = shared_resources["config"]
         to_classify = [row for row in annual_rows if row["source_type"] != "hsd"]
         classified = category_model.classify_and_weight_rows(
             to_classify,
@@ -559,47 +579,104 @@ def _yearly_bug_created_date_sql(available: set[str]):
     ).format(has_ips=has_ips, ips_date=ips_date, hsd_date=hsd_date, jira_date=jira_date)
 
 
+def _initialize_yearly_db_pool() -> None:
+    global YEARLY_DB_POOL
+    with YEARLY_DB_POOL_LOCK:
+        if YEARLY_DB_POOL is not None:
+            return
+        db = Sherlock.PostgresCustomerEngineeringDb
+        YEARLY_DB_POOL = ThreadedConnectionPool(
+            1,
+            4,
+            dbname=db.database,
+            user=db.user,
+            password=db.password,
+            host=db.host,
+            port=db.port,
+            connect_timeout=10,
+        )
+
+
+def _close_yearly_db_pool() -> None:
+    global YEARLY_DB_POOL
+    with YEARLY_DB_POOL_LOCK:
+        if YEARLY_DB_POOL is not None:
+            YEARLY_DB_POOL.closeall()
+            YEARLY_DB_POOL = None
+
+
+def _yearly_db_connection() -> tuple[Any, bool]:
+    with YEARLY_DB_POOL_LOCK:
+        pool = YEARLY_DB_POOL
+    if pool is not None:
+        connection = pool.getconn()
+        connection.autocommit = True
+        return connection, True
+
+    db = Sherlock.PostgresCustomerEngineeringDb
+    return psycopg2.connect(
+        dbname=db.database,
+        user=db.user,
+        password=db.password,
+        host=db.host,
+        port=db.port,
+        connect_timeout=10,
+    ), False
+
+
 def _load_yearly_issues(
     selected_year: int | None = None, source_table: str = FIELD_ISSUE_TABLE
 ) -> dict:
     if source_table not in {FIELD_ISSUE_TABLE, TEAM_LOADING_TEST_TABLE}:
         raise ValueError("Unsupported issue source table")
-    db = Sherlock.PostgresCustomerEngineeringDb
-    connection = psycopg2.connect(
-        dbname=db.database, user=db.user, password=db.password, host=db.host, port=db.port, connect_timeout=10
-    )
+    connection, pooled_connection = _yearly_db_connection()
     try:
         with connection.cursor() as cursor:
             source_tables = [source_table]
             if source_table == TEAM_LOADING_TEST_TABLE:
-                source_tables.append(FIELD_ISSUE_TABLE)
+                source_tables.insert(0, FIELD_ISSUE_TABLE)
 
             available_by_table: dict[str, set[str]] = {}
             years_by_table: dict[str, list[int]] = {}
-            for table_name in dict.fromkeys(source_tables):
-                cursor.execute(
-                    "SELECT column_name FROM information_schema.columns "
-                    "WHERE table_name = %s AND table_schema = ANY(current_schemas(false))",
-                    (table_name,),
-                )
-                available_by_table[table_name] = {row[0] for row in cursor.fetchall()}
-                available = available_by_table[table_name]
+            source_tables = list(dict.fromkeys(source_tables))
+            cursor.execute(
+                "SELECT table_name, column_name FROM information_schema.columns "
+                "WHERE table_name = ANY(%s) AND table_schema = ANY(current_schemas(false))",
+                (source_tables,),
+            )
+            for table_name, column_name in cursor.fetchall():
+                available_by_table.setdefault(table_name, set()).add(column_name)
+
+            year_queries = []
+            year_query_tables = []
+            for table_name in source_tables:
+                available = available_by_table.setdefault(table_name, set())
+                years_by_table[table_name] = []
                 if "ips_created_date" not in available:
                     if table_name == source_table:
                         raise RuntimeError(f"ips_created_date is not available in {table_name}")
-                    years_by_table[table_name] = []
                     continue
 
                 bug_created_date = _yearly_bug_created_date_sql(available)
-                cursor.execute(
+                year_queries.append(
                     sql.SQL(
-                        "SELECT DISTINCT EXTRACT(YEAR FROM ({bug_created_date}))::int AS issue_year "
-                        "FROM {table} WHERE ({bug_created_date}) IS NOT NULL ORDER BY issue_year DESC"
+                        "SELECT DISTINCT %s::text AS table_name, "
+                        "EXTRACT(YEAR FROM ({bug_created_date}))::int AS issue_year "
+                        "FROM {table} WHERE ({bug_created_date}) IS NOT NULL"
                     ).format(table=sql.Identifier(table_name), bug_created_date=bug_created_date)
                 )
-                years_by_table[table_name] = [
-                    int(row[0]) for row in cursor.fetchall() if row[0] is not None
-                ]
+                year_query_tables.append(table_name)
+
+            if year_queries:
+                cursor.execute(
+                    sql.SQL("SELECT * FROM ({}) AS available_years ORDER BY table_name, issue_year DESC").format(
+                        sql.SQL(" UNION ALL ").join(year_queries)
+                    ),
+                    tuple(year_query_tables),
+                )
+                for table_name, issue_year in cursor.fetchall():
+                    if issue_year is not None:
+                        years_by_table[table_name].append(int(issue_year))
             years = sorted({year for table_years in years_by_table.values() for year in table_years}, reverse=True)
             if selected_year is None:
                 selected_year = CURRENT_YEAR if CURRENT_YEAR in years else (years[0] if years else CURRENT_YEAR)
@@ -626,13 +703,21 @@ def _load_yearly_issues(
                 )
                 records = [dict(zip(columns, row)) for row in cursor.fetchall()]
     finally:
-        connection.close()
+        if pooled_connection:
+            YEARLY_DB_POOL.putconn(connection, close=bool(connection.closed))
+        else:
+            connection.close()
 
     engineers = aggregate_yearly_records(records, "engineer", selected_year)
     oem_records = filter_oem_view_records(records)
     customers = aggregate_yearly_records(oem_records, "customer", selected_year)
-    engineer_loading, engineer_note = _yearly_weighted_loading(records, "engineer", selected_year)
-    customer_loading, customer_note = _yearly_weighted_loading(oem_records, "customer", selected_year)
+    weighting_resources: dict[str, Any] = {}
+    engineer_loading, engineer_note = _yearly_weighted_loading(
+        records, "engineer", selected_year, weighting_resources
+    )
+    customer_loading, customer_note = _yearly_weighted_loading(
+        oem_records, "customer", selected_year, weighting_resources
+    )
     for row in engineers["groups"]:
         row["weighted_loading"] = engineer_loading.get(row["name"].casefold(), 0.0)
     engineers["total"]["weighted_loading"] = round(sum(engineer_loading.values()), 2)
@@ -659,6 +744,34 @@ def _load_yearly_issues(
     }
 
 
+TEAM_LOADING_MODEL_CACHE: tuple[tuple, tuple] | None = None
+TEAM_LOADING_MODEL_LOCK = threading.Lock()
+
+
+def _team_loading_model_config() -> tuple[dict, tuple[dict, dict, float]] | None:
+    global TEAM_LOADING_MODEL_CACHE
+    model_path = ROOT / "models" / "issue_category_model.joblib"
+    weight_map_path = WEIGHT_MAP_PATH
+    if not model_path.is_file() or not weight_map_path.is_file():
+        return None
+
+    model_stat = model_path.stat()
+    weight_stat = weight_map_path.stat()
+    signature = (
+        str(model_path), model_stat.st_mtime_ns, model_stat.st_size,
+        str(weight_map_path), weight_stat.st_mtime_ns, weight_stat.st_size,
+    )
+    with TEAM_LOADING_MODEL_LOCK:
+        if TEAM_LOADING_MODEL_CACHE is not None and TEAM_LOADING_MODEL_CACHE[0] == signature:
+            return TEAM_LOADING_MODEL_CACHE[1]
+        config = (
+            category_model.load_category_model(str(model_path)),
+            category_model.load_weight_map(str(weight_map_path)),
+        )
+        TEAM_LOADING_MODEL_CACHE = (signature, config)
+        return config
+
+
 def _load_test_team_loading() -> dict:
     from offload_reporter_issues import (
         DbConnector,
@@ -671,7 +784,8 @@ def _load_test_team_loading() -> dict:
 
     table_name = TEAM_LOADING_TEST_TABLE
     _validate_table_name(table_name)
-    db = DbConnector()
+    connection, pooled_connection = _yearly_db_connection()
+    db = DbConnector(connection=connection)
     try:
         stale_days = int(os.environ.get("STALE_DAYS", "90"))
         breakdown = _get_reporter_current_breakdown(db, table_name, stale_days, filter_allowed=True)
@@ -679,12 +793,17 @@ def _load_test_team_loading() -> dict:
         weighted_category_rows: list = []
         issue_details_by_reporter: dict = {}
         if breakdown:
+            try:
+                model_config = _team_loading_model_config()
+            except Exception:
+                model_config = None
             weighted_summary, weighted_category_rows, issue_details_by_reporter = _build_weighted_summary(
                 db,
                 table_name,
                 breakdown,
                 model_path=str(ROOT / "models" / "issue_category_model.joblib"),
                 weight_map_path=str(WEIGHT_MAP_PATH),
+                model_config=model_config,
             )
         category_order = _load_weight_category_display_order(str(WEIGHT_MAP_PATH))
         categories, rows = _build_combined_trial_table_data(
@@ -695,7 +814,13 @@ def _load_test_team_loading() -> dict:
             issue_details_by_reporter=issue_details_by_reporter,
         )
     finally:
-        db.__del__()
+        db.close()
+        if pooled_connection:
+            pool = YEARLY_DB_POOL
+            if pool is not None:
+                pool.putconn(connection, close=bool(connection.closed))
+        else:
+            connection.close()
 
     return {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -706,6 +831,28 @@ def _load_test_team_loading() -> dict:
         "source_table": table_name,
         "jira_base_url": Sherlock.Jira.server.rstrip("/"),
     }
+
+
+def _warm_test_team_loading_resources() -> None:
+    from offload_reporter_issues import DbConnector, _get_table_columns
+
+    try:
+        _team_loading_model_config()
+    except Exception as exc:
+        print(f"[dashboard] Could not warm Team loading model ({type(exc).__name__}).")
+
+    connection, pooled_connection = _yearly_db_connection()
+    db = DbConnector(connection=connection)
+    try:
+        _get_table_columns(db, TEAM_LOADING_TEST_TABLE)
+    finally:
+        db.close()
+        if pooled_connection:
+            pool = YEARLY_DB_POOL
+            if pool is not None:
+                pool.putconn(connection, close=bool(connection.closed))
+        else:
+            connection.close()
 
 
 def _read_json(path: Path) -> dict:
@@ -1670,6 +1817,13 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8010)
     args = parser.parse_args()
+    try:
+        _initialize_yearly_db_pool()
+        print("[dashboard] Warmed yearly issue database connection pool.")
+        _warm_test_team_loading_resources()
+        print("[dashboard] Warmed Team loading model and schema metadata.")
+    except Exception as exc:
+        print(f"[dashboard] Could not warm yearly issue resources ({type(exc).__name__}).")
     server = ThreadingHTTPServer((args.host, args.port), LoadingDashboardHandler)
     print(f"Loading dashboard: http://{args.host}:{args.port}/")
     threading.Thread(target=_warm_caches, daemon=True).start()
@@ -1684,6 +1838,7 @@ def main() -> None:
         refresh_stop.set()
         refresh_thread.join(timeout=5)
         server.server_close()
+        _close_yearly_db_pool()
 
 
 if __name__ == "__main__":
