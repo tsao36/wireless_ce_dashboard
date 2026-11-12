@@ -936,7 +936,10 @@
           const button = event.target.closest('button[data-sort-key]');
           if (!button) return;
           const sortKey = button.dataset.sortKey;
-          toggleSortState(loadingSortState, sortKey);
+          const repeatedClick = loadingSortState.clickedKey === sortKey;
+          loadingSortState.key = sortKey;
+          loadingSortState.direction = repeatedClick && loadingSortState.direction === 'asc' ? 'desc' : 'asc';
+          loadingSortState.clickedKey = sortKey;
           document.querySelector('#sort-filter').value = sortKey;
           saveViewState(); renderSnapshot();
         });
