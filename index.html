@@ -139,9 +139,23 @@
     .yearly-table th:first-child,.yearly-table td:first-child { position:sticky; left:0; z-index:1; min-width:180px; }
     .yearly-table th:first-child { z-index:2; }
     .yearly-table tfoot td { color:#fff; background:#333; font-weight:700; }
+    .yearly-table tbody tr.yearly-total-row td { color:#fff; background:#333; font-weight:700; }
+    .yearly-total-count { display:flex; align-items:center; min-height:36px; min-width:150px; padding:7px 12px; border:2px solid #e53935; border-radius:5px; color:var(--ink); background:#fff; font:700 14px "Segoe UI",Tahoma,sans-serif; }
     .yearly-section-title { margin:18px 20px 8px; font-size:16px; }
     .yearly-note { min-height:20px; margin:0; padding:8px 20px; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; }
     .yearly-note:empty { display:none; }
+    .overview-status { min-height:20px; margin:0; padding:8px 20px; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; }
+    .overview-metric { width:calc(100% - 40px); max-width:820px; margin:18px auto 28px; }
+    .overview-metric h3 { margin:0 0 8px; color:#07518A; font-size:24px; font-weight:500; text-align:center; }
+    .overview-metric p { margin:0 0 8px; color:var(--muted); font-size:12px; text-align:center; }
+    .overview-table-wrap { overflow-x:auto; }
+    .overview-table { width:100%; min-width:480px; table-layout:fixed; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+    .overview-table th,.overview-table td { width:25%; padding:10px 8px; border:2px solid #fff; text-align:center; }
+    .overview-table th { color:#fff; background:var(--overview-color); font-size:18px; }
+    .overview-table td { background:var(--overview-light); font-size:20px; }
+    .overview-count { --overview-color:#0873B9; --overview-light:#CFD9E8; }
+    .overview-fix { --overview-color:#F4C944; --overview-light:#FCEFD4; }
+    .overview-triage { --overview-color:#08B8D8; --overview-light:#D0EDF7; }
     .tat-toolbar { align-items:end; }
     .tat-toolbar label { display:flex; flex-direction:column; align-items:stretch; min-width:150px; }
     .tat-toolbar input,.tat-toolbar select { min-width:150px; }
@@ -244,8 +258,28 @@
       <button class="view-tab" id="activity-tab" type="button" role="tab" aria-selected="false" aria-controls="activity-view" tabindex="-1">Team activity</button>
       <button class="view-tab" id="loading-tab" data-view="loading" type="button" role="tab" aria-selected="true" aria-controls="loading-view">Team loading</button>
       <button class="view-tab" id="yearly-tab" data-view="yearly" type="button" role="tab" aria-selected="false" aria-controls="yearly-view" tabindex="-1">Yearly issues</button>
+      <button class="view-tab" id="overview-tab" data-view="overview" type="button" role="tab" aria-selected="false" aria-controls="overview-view" tabindex="-1">Issues at a glance</button>
       <button class="view-tab" id="turnaround-tab" data-view="turnaround" type="button" role="tab" aria-selected="false" aria-controls="turnaround-view" tabindex="-1">Issue turnaround time</button>
     </div>
+    <section class="panel" id="overview-view" role="tabpanel" aria-labelledby="overview-tab" hidden>
+      <div class="panel-head"><h2>Issues at a glance</h2><span>2026 year to date</span></div>
+      <p class="overview-status" id="overview-status" role="status" aria-live="polite">Select this tab to load annual issue data.</p>
+      <section class="overview-metric overview-count" aria-labelledby="overview-count-title">
+        <h3 id="overview-count-title">Issue Count</h3>
+        <p>Unique IPS cases, including promoted and non-promoted.</p>
+        <div class="overview-table-wrap"><table class="overview-table"><caption class="sr-only">Unique IPS case count by year</caption><thead><tr id="overview-count-head"></tr></thead><tbody><tr id="overview-count-values"></tr></tbody></table></div>
+      </section>
+      <section class="overview-metric overview-fix" aria-labelledby="overview-fix-title">
+        <h3 id="overview-fix-title">Fix Rate</h3>
+        <p>Software-change Jira rows divided by combined Jira, unpromoted IPS, and unpromoted HSD issues.</p>
+        <div class="overview-table-wrap"><table class="overview-table"><caption class="sr-only">Fix rate by year</caption><thead><tr id="overview-fix-head"></tr></thead><tbody><tr id="overview-fix-values"></tr></tbody></table></div>
+      </section>
+      <section class="overview-metric overview-triage" aria-labelledby="overview-triage-title">
+        <h3 id="overview-triage-title">Triage Rate</h3>
+        <p>Unique IPS cases marked Promoted or Done divided by all unique IPS cases.</p>
+        <div class="overview-table-wrap"><table class="overview-table"><caption class="sr-only">Triage rate by year</caption><thead><tr id="overview-triage-head"></tr></thead><tbody><tr id="overview-triage-values"></tr></tbody></table></div>
+      </section>
+    </section>
     <section class="panel activity-panel" id="activity-view" role="tabpanel" aria-labelledby="activity-tab" hidden>
       <div class="panel-head"><h2>Team activity</h2><span id="activity-record-count">Loading workbook...</span></div>
       <div class="toolbar activity-toolbar">
@@ -260,7 +294,7 @@
     </section>
     <section class="panel yearly-panel" id="yearly-view" role="tabpanel" aria-labelledby="yearly-tab" hidden>
       <div class="panel-head"><h2>Yearly issue dashboard</h2><span id="yearly-status" role="status" aria-live="polite">Select a year to load data.</span></div>
-      <div class="toolbar yearly-toolbar"><label>Created year <select id="yearly-year" aria-label="Select issue creation year"><option value="">Loading years...</option></select></label><label>Search <input id="yearly-search" type="search" placeholder="Engineer or customer" aria-label="Search engineer or customer"></label><label>Sort <select id="yearly-sort-filter"><option value="weighted_loading">Weighted loading</option><option value="total_issue_count">Total issues</option><option value="name">Name</option></select></label><div class="team-filter" id="yearly-team-filter" role="group" aria-label="Filter engineers by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div>
+      <div class="toolbar yearly-toolbar"><label>Created year <select id="yearly-year" aria-label="Select issue creation year"><option value="">Loading years...</option></select></label><label>Search <input id="yearly-search" type="search" placeholder="Engineer or customer" aria-label="Search engineer or customer"></label><label>Sort <select id="yearly-sort-filter"><option value="weighted_loading">Weighted loading</option><option value="total_issue_count">Total issues</option><option value="name">Name</option></select></label><output class="yearly-total-count" id="yearly-total-count" aria-live="polite">Total issues: -</output><div class="team-filter" id="yearly-team-filter" role="group" aria-label="Filter engineers by team"><button type="button" data-team="all" aria-pressed="true">All</button><button type="button" data-team="wifi" aria-pressed="false">WiFi</button><button type="button" data-team="bt" aria-pressed="false">BT</button></div></div>
       <p class="yearly-note" id="yearly-note" role="status" aria-live="polite"></p>
       <h3 class="yearly-section-title">Team loading by engineer</h3>
       <div class="table-wrap yearly-table-wrap"><table class="activity-table yearly-table"><thead id="yearly-engineer-head"></thead><tbody id="yearly-engineer-body"></tbody><tfoot id="yearly-engineer-foot"></tfoot></table></div>
@@ -339,6 +373,8 @@
     let yearlyLoading = false;
     let yearlyLoaded = false;
     let currentYearlyIssues = null;
+    let issueOverviewLoaded = false;
+    let issueOverviewLoading = false;
     const yearlySortStates = {
       engineer: { key: yearlyEngineerSort, direction: yearlyEngineerSort === 'name' ? 'asc' : 'desc', clickedKey: null },
       customer: { key: yearlyCustomerSort, direction: yearlyCustomerSort === 'name' ? 'asc' : 'desc', clickedKey: null },
@@ -582,8 +618,10 @@
               const ariaSort = activeSort ? (sortState.direction === 'desc' ? 'descending' : 'ascending') : 'none';
               return `<th scope="col" aria-sort="${ariaSort}"><button class="yearly-sort-button" type="button" data-sort-key="${key}" aria-label="Sort by ${esc(label)}${activeSort ? `, currently ${sortState.direction === 'desc' ? 'descending' : 'ascending'}` : ''}">${esc(label)}</button></th>`;
             }).join('')}</tr>`;
-            document.querySelector(`#${prefix}-body`).innerHTML = rows.map(row => `<tr>${columns.map(([, key]) => `<td>${cell(row, key)}</td>`).join('')}</tr>`).join('');
-            document.querySelector(`#${prefix}-foot`).innerHTML = `<tr>${columns.map(([, key], index) => `<td>${index === 0 ? 'Total' : cell(total, key)}</td>`).join('')}</tr>`;
+            const bodyRows = rows.map(row => `<tr>${columns.map(([, key]) => `<td>${cell(row, key)}</td>`).join('')}</tr>`).join('');
+            const totalRow = `<tr class="yearly-total-row">${columns.map(([, key]) => `<td>${cell(result.total || total, key)}</td>`).join('')}</tr>`;
+            document.querySelector(`#${prefix}-body`).innerHTML = bodyRows + totalRow;
+            document.querySelector(`#${prefix}-foot`).innerHTML = '';
           }
           function formatTatDuration(hours) {
             if (!Number.isFinite(hours)) return '-';
@@ -729,6 +767,39 @@
               renderClosedUnpromotedIpsTable(filteredClosedUnpromotedIpsRecords());
             }
           }
+          async function loadIssueOverview() {
+            if (issueOverviewLoading || issueOverviewLoaded) return;
+            issueOverviewLoading = true;
+            const status = document.querySelector('#overview-status');
+            status.classList.remove('error');
+            status.textContent = 'Loading annual issue data...';
+            try {
+              const years = [2023, 2024, 2025, 2026];
+              const totals = await Promise.all(years.map(async year => {
+                const params = new URLSearchParams({ source: 'ips_jira_bugs_v2', year: String(year) });
+                const response = await fetch(`${API_BASE}/api/yearly-issues?${params.toString()}`, { cache: 'no-store' });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
+                return result.engineers?.total || {};
+              }));
+              const metrics = [
+                { id: 'count', key: 'total_ips', format: value => Number(value || 0).toLocaleString() },
+                { id: 'fix', key: 'driver_fixed_rate', format: value => `${Math.round(Number(value || 0) * 100)}%` },
+                { id: 'triage', key: 'jira_triage_rate', format: value => `${Math.round(Number(value || 0) * 100)}%` },
+              ];
+              metrics.forEach(metric => {
+                document.querySelector(`#overview-${metric.id}-head`).innerHTML = years.map(year => `<th scope="col">${year}</th>`).join('');
+                document.querySelector(`#overview-${metric.id}-values`).innerHTML = totals.map(total => `<td>${metric.format(total[metric.key])}</td>`).join('');
+              });
+              status.textContent = 'Overall issue totals · 2026 data is year to date.';
+              issueOverviewLoaded = true;
+            } catch (error) {
+              status.classList.add('error');
+              status.textContent = `Unable to load annual issue overview: ${error.message}`;
+            } finally {
+              issueOverviewLoading = false;
+            }
+          }
           async function loadYearlyIssues(year = '') {
             if (yearlyLoading) return;
             yearlyLoading = true;
@@ -761,6 +832,7 @@
               projectSelect.value = projects.includes(selectedProject) ? selectedProject : 'all';
               renderYearlyTable('engineers', 'engineer');
               renderYearlyTable('customers', 'customer');
+              document.querySelector('#yearly-total-count').textContent = `Total issues: ${Number(result.engineers?.total?.total_issue_count || 0).toLocaleString()}`;
               renderTurnaround();
               document.querySelector('#yearly-note').textContent = result.weighting_message || '';
               status.textContent = `${result.selected_year} · ${result.engineers?.groups?.length || 0} engineers · ${result.customers?.groups?.length || 0} customers`;
@@ -772,20 +844,25 @@
           function selectDashboardView(view) {
             const activity = view === 'activity';
             const loading = view === 'loading';
+            const overview = view === 'overview';
             const turnaround = view === 'turnaround';
             document.querySelector('#activity-tab').setAttribute('aria-selected', String(activity));
             document.querySelector('#loading-tab').setAttribute('aria-selected', String(loading));
             document.querySelector('#yearly-tab').setAttribute('aria-selected', String(view === 'yearly'));
+            document.querySelector('#overview-tab').setAttribute('aria-selected', String(overview));
             document.querySelector('#turnaround-tab').setAttribute('aria-selected', String(turnaround));
             document.querySelector('#activity-tab').tabIndex = activity ? 0 : -1;
             document.querySelector('#loading-tab').tabIndex = loading ? 0 : -1;
             document.querySelector('#yearly-tab').tabIndex = view === 'yearly' ? 0 : -1;
+            document.querySelector('#overview-tab').tabIndex = overview ? 0 : -1;
             document.querySelector('#turnaround-tab').tabIndex = turnaround ? 0 : -1;
             document.querySelector('#activity-view').hidden = !activity;
             document.querySelector('#loading-view').hidden = !loading;
             document.querySelector('#yearly-view').hidden = view !== 'yearly';
+            document.querySelector('#overview-view').hidden = !overview;
             document.querySelector('#turnaround-view').hidden = !turnaround;
             if (activity && !currentActivity.sheets.length) loadActivity();
+            if (overview) loadIssueOverview();
             if ((view === 'yearly' || turnaround) && !yearlyLoaded) loadYearlyIssues(document.querySelector('#yearly-year').value || savedViewState.yearlyYear || '');
             if (turnaround && yearlyLoaded) renderTurnaround();
           }
