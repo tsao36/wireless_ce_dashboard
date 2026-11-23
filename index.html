@@ -605,7 +605,11 @@
             total.jira_triage_rate = total.total_ips ? total.promoted_ips / total.total_ips : 0;
             total.driver_fixed_rate = total.total_issue_count ? total.fixed_jira / total.total_issue_count : 0;
             total.good_bug_ratio = total.good_bug_denominator ? total.good_bug_count / total.good_bug_denominator : 0;
-            const count = value => Number(value || 0).toLocaleString();
+            const countNumber = value => Number(value || 0).toLocaleString();
+            if (tableName === 'engineer') {
+              document.querySelector('#yearly-total-count').textContent = `Total issues: ${countNumber(total.total_issue_count)}`;
+            }
+            const count = value => countNumber(value);
             const percent = (value, digits = 0) => `${(Number(value || 0) * 100).toFixed(digits)}%`;
             const cell = (row, key) => {
               if (key === 'good_bug_ratio') return percent(row[key], 1);
@@ -619,7 +623,7 @@
               return `<th scope="col" aria-sort="${ariaSort}"><button class="yearly-sort-button" type="button" data-sort-key="${key}" aria-label="Sort by ${esc(label)}${activeSort ? `, currently ${sortState.direction === 'desc' ? 'descending' : 'ascending'}` : ''}">${esc(label)}</button></th>`;
             }).join('')}</tr>`;
             const bodyRows = rows.map(row => `<tr>${columns.map(([, key]) => `<td>${cell(row, key)}</td>`).join('')}</tr>`).join('');
-            const totalRow = `<tr class="yearly-total-row">${columns.map(([, key]) => `<td>${cell(result.total || total, key)}</td>`).join('')}</tr>`;
+            const totalRow = `<tr class="yearly-total-row">${columns.map(([, key]) => `<td>${cell(total, key)}</td>`).join('')}</tr>`;
             document.querySelector(`#${prefix}-body`).innerHTML = bodyRows + totalRow;
             document.querySelector(`#${prefix}-foot`).innerHTML = '';
           }
@@ -832,7 +836,6 @@
               projectSelect.value = projects.includes(selectedProject) ? selectedProject : 'all';
               renderYearlyTable('engineers', 'engineer');
               renderYearlyTable('customers', 'customer');
-              document.querySelector('#yearly-total-count').textContent = `Total issues: ${Number(result.engineers?.total?.total_issue_count || 0).toLocaleString()}`;
               renderTurnaround();
               document.querySelector('#yearly-note').textContent = result.weighting_message || '';
               status.textContent = `${result.selected_year} · ${result.engineers?.groups?.length || 0} engineers · ${result.customers?.groups?.length || 0} customers`;
