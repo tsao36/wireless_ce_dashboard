@@ -134,9 +134,12 @@
     .activity-chart-name-button { max-width:100%; padding:4px 0; border:0; color:var(--ink); background:transparent; font:700 13px "Segoe UI",Tahoma,sans-serif; text-align:left; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; overflow-wrap:anywhere; cursor:pointer; }
     .activity-chart-name-button:hover,.activity-chart-name-button:focus-visible { color:var(--accent); outline:2px solid var(--accent); outline-offset:2px; }
     .activity-chart-name-button[aria-pressed="true"] { color:var(--accent); }
-    .activity-chart-track { height:20px; overflow:hidden; background:#D8DCE4; border-radius:4px; }
-    .activity-chart-bar { height:100%; min-width:5px; background:var(--accent); border-radius:4px; }
-    .activity-chart-row:first-child .activity-chart-bar { background:#0873B9; }
+    .activity-chart-legend { display:flex; flex-wrap:wrap; gap:12px; margin:-4px 0 10px; color:var(--muted); font-size:11px; }
+    .activity-chart-legend span { display:inline-flex; align-items:center; gap:5px; }
+    .activity-chart-swatch { width:12px; height:12px; border-radius:3px; background:#BC704A; }
+    .activity-chart-swatch.completed { background:#0873B9; }
+    .activity-chart-track { position:relative; height:20px; overflow:hidden; background:#BC704A; border-radius:4px; }
+    .activity-chart-segment.completed { position:absolute; inset:0 auto 0 0; height:100%; background:#0873B9; }
     .activity-chart-value { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; text-align:right; }
     .activity-chart-value strong { display:block; color:var(--ink); font-size:14px; }
     .activity-chart-empty { padding:14px 0 2px; color:var(--muted); font-size:13px; }
@@ -309,7 +312,7 @@
         <button class="activity-refresh" type="button" id="activity-refresh">Refresh workbook</button>
       </div>
       <p class="activity-status" id="activity-status" role="status" aria-live="polite">Loading activity workbook...</p>
-      <section class="activity-chart-section" aria-labelledby="activity-chart-title"><div class="activity-chart-head"><h3 id="activity-chart-title">Activity loading by engineer</h3><span id="activity-chart-caption">Loading chart...</span></div><div class="activity-chart" id="activity-chart" role="img" aria-label="Engineer activity loading chart"></div></section>
+      <section class="activity-chart-section" aria-labelledby="activity-chart-title"><div class="activity-chart-head"><h3 id="activity-chart-title">Activity loading by engineer</h3><span id="activity-chart-caption">Loading chart...</span></div><div class="activity-chart-legend" aria-label="Chart legend"><span><i class="activity-chart-swatch" aria-hidden="true"></i>Total tasks</span><span><i class="activity-chart-swatch completed" aria-hidden="true"></i>Completed tasks (Y)</span></div><div class="activity-chart" id="activity-chart" role="img" aria-label="Engineer activity loading chart"></div></section>
       <div class="table-wrap activity-table-wrap" id="activity-table-wrap"><table class="activity-table activity-sortable-table"><thead id="activity-table-head"></thead><tbody id="activity-table-body"></tbody></table></div>
       <div class="activity-empty" id="activity-empty" hidden></div>
     </section>
@@ -551,38 +554,38 @@
               caption.textContent = `Current worksheet: ${sheet.name}`;
               return;
             }
-            const completedValues = new Set(['y', 'yes', 'done', 'complete', 'completed', 'closed', '1', 'true']);
             const groups = new Map();
             rows.forEach(row => {
               const owner = String(row.values[ownerIndex] ?? '').trim();
               const ownerKey = owner.toLowerCase();
               if (!owner || ['looking for owner', 'unassigned', 'tbd', 'na', 'n/a'].includes(ownerKey)) return;
-              const completed = completedIndex >= 0 && completedValues.has(String(row.values[completedIndex] ?? '').trim().toLowerCase());
-              if (completed) return;
+              const completeValue = completedIndex >= 0 ? String(row.values[completedIndex] ?? '').trim().toUpperCase() : '';
+              const completed = completeValue === 'Y';
               const rawScore = scoreIndex >= 0 ? String(row.values[scoreIndex] ?? '').replaceAll(',', '').replace('%', '').trim() : '1';
               const parsedScore = Number(rawScore);
               const score = Number.isFinite(parsedScore) ? parsedScore : 0;
-              if (!groups.has(owner)) groups.set(owner, { name: owner, score: 0, tasks: 0 });
+              if (!groups.has(owner)) groups.set(owner, { name: owner, score: 0, tasks: 0, completed: 0 });
               const group = groups.get(owner);
               group.score += score;
               group.tasks += 1;
+              if (completed) group.completed += 1;
             });
-            const data = [...groups.values()].sort((left, right) => right.score - left.score || right.tasks - left.tasks || left.name.localeCompare(right.name));
+            const data = [...groups.values()].sort((left, right) => right.tasks - left.tasks || right.score - left.score || left.name.localeCompare(right.name));
             if (!data.length) {
-              chart.innerHTML = '<div class="activity-chart-empty">No incomplete activities match the current filters.</div>';
+              chart.innerHTML = '<div class="activity-chart-empty">No activities match the current filters.</div>'; 
               caption.textContent = scoreIndex >= 0 ? `${sheet.columns[scoreIndex].label} totals · ${sheet.name}` : `Active task count · ${sheet.name}`;
               return;
             }
-            const metric = scoreIndex >= 0 ? String(sheet.columns[scoreIndex].label || 'Contribution') : 'Active tasks';
-            const maximum = Math.max(...data.map(item => item.score), 1);
-            chart.setAttribute('aria-label', `${metric} by engineer for ${sheet.name}`);
+            const metric = scoreIndex >= 0 ? String(sheet.columns[scoreIndex].label || 'Contribution') : 'Contribution unavailable';
+            const maximum = Math.max(...data.map(item => item.tasks), 1);
+            chart.setAttribute('aria-label', `Completed and incomplete task counts by engineer for ${sheet.name}`);
             chart.innerHTML = data.map((item, index) => {
-              const width = Math.max(3, Math.round((item.score / maximum) * 100));
-              const taskLabel = `${item.tasks} task${item.tasks === 1 ? '' : 's'}`;
+              const width = Math.max(3, (item.tasks / maximum) * 100);
+              const completedWidth = item.tasks ? (item.completed / item.tasks) * 100 : 0;
               const selected = activityEngineerFilter === item.name;
-              return `<div class="activity-chart-row"><span class="activity-chart-name"><button class="activity-chart-name-button" type="button" data-activity-engineer="${esc(item.name)}" aria-pressed="${selected}" aria-label="${selected ? 'Clear' : 'Show'} activity table filter for ${esc(item.name)}">${index === 0 ? '★ ' : ''}${esc(item.name)}</button></span><div class="activity-chart-track" aria-hidden="true"><div class="activity-chart-bar" style="width:${width}%"></div></div><span class="activity-chart-value"><strong>${item.score.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong>${taskLabel}</span></div>`;
+              return `<div class="activity-chart-row"><span class="activity-chart-name"><button class="activity-chart-name-button" type="button" data-activity-engineer="${esc(item.name)}" aria-pressed="${selected}" aria-label="${selected ? 'Clear' : 'Show'} activity table filter for ${esc(item.name)}">${index === 0 ? '★ ' : ''}${esc(item.name)}</button></span><div class="activity-chart-track" style="width:${width}%" title="${item.tasks} total tasks, ${item.completed} completed (Y)"><div class="activity-chart-segment completed" style="width:${completedWidth}%"></div></div><span class="activity-chart-value"><strong>${item.completed}/${item.tasks}</strong>${metric}: ${item.score.toFixed(2)}</span></div>`;
             }).join('');
-            caption.textContent = `${metric} · incomplete rows · ${data.length} engineer${data.length === 1 ? '' : 's'}`;
+            caption.textContent = `Total tasks with completed = Y overlay · ${data.length} engineer${data.length === 1 ? '' : 's'}`;
           }
 
           function renderActivitySheet() {
@@ -613,7 +616,14 @@
               });
             }
             head.innerHTML = `<tr>${sheet.columns.map((column, index) => sortHeader(column.label, `activity-${index}`, activitySortState)).join('')}</tr>`;
-            body.innerHTML = rows.map(row => `<tr>${row.values.map(value => `<td>${esc(value ?? '')}</td>`).join('')}</tr>`).join('');
+            const contributionIndex = sheet.columns.findIndex(column => String(column.label || '').trim().toLowerCase() === 'contribution');
+            body.innerHTML = rows.map(row => `<tr>${row.values.map((value, index) => {
+              const numericValue = Number(String(value ?? '').replaceAll(',', '').replace('%', '').trim());
+              const displayValue = index === contributionIndex && value !== null && value !== '' && Number.isFinite(numericValue)
+                ? numericValue.toFixed(2)
+                : value ?? '';
+              return `<td>${esc(displayValue)}</td>`;
+            }).join('')}</tr>`).join('');
             empty.hidden = rows.length > 0; empty.textContent = search ? 'No rows match this search.' : 'This worksheet has no rows for the current year.';
             document.querySelector('#activity-record-count').textContent = `${rows.length} rows · ${sheet.name}`;
           }
