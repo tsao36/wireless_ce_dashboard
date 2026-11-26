@@ -10,6 +10,56 @@ from APIs.Sherlock import PostgresCustomerEngineeringDb as config
 import offload_reporter_issues as offload
 
 
+class LoadingTitleTests(unittest.TestCase):
+    def test_linked_jira_summary_precedes_ips_title(self):
+        self.assertEqual(
+            offload._title_expr({"ips_title", "jira_summary"}),
+            "COALESCE(NULLIF(NULLIF(TRIM(jira_summary), ''), 'NA'), "
+            "NULLIF(NULLIF(TRIM(ips_title), ''), 'NA'))",
+        )
+
+    def test_linked_jira_and_hsd_titles_precede_ips_title(self):
+        self.assertEqual(
+            offload._title_expr({"ips_title", "jira_summary", "hsd_title"}),
+            "COALESCE(NULLIF(NULLIF(TRIM(jira_summary), ''), 'NA'), "
+            "NULLIF(NULLIF(TRIM(hsd_title), ''), 'NA'), "
+            "NULLIF(NULLIF(TRIM(ips_title), ''), 'NA'))",
+        )
+
+    def test_linked_hsd_title_precedes_ips_title(self):
+        self.assertEqual(
+            offload._title_expr({"ips_title", "hsd_title"}),
+            "COALESCE(NULLIF(NULLIF(TRIM(hsd_title), ''), 'NA'), "
+            "NULLIF(NULLIF(TRIM(ips_title), ''), 'NA'))",
+        )
+
+    def test_title_expression_supports_optional_columns(self):
+        for column in ("ips_title", "jira_summary", "hsd_title", "jira_title"):
+            with self.subTest(column=column):
+                self.assertEqual(
+                    offload._title_expr({column}),
+                    f"NULLIF(NULLIF(TRIM({column}), ''), 'NA')",
+                )
+        self.assertEqual(offload._title_expr(set()), "NULL")
+
+
+class LoadingSummaryChartTests(unittest.TestCase):
+    def test_group_charts_highlight_wifi_and_bt_leaders(self):
+        html = offload._loading_group_charts_html([
+            {"name": "Frank Lee", "weighted_loading_value": 8.25},
+            {"name": "KJ Fang", "weighted_loading_value": 14.50},
+            {"name": "Brenton Wu", "weighted_loading_value": 10.0},
+            {"name": "Matt Chen", "weighted_loading_value": 18.75},
+            {"name": "Juan Zou", "weighted_loading_value": 6.0},
+        ])
+        self.assertIn("Wi-Fi Loading", html)
+        self.assertIn("BT Loading", html)
+        self.assertIn("KJ Fang</b> at <b>14.50", html)
+        self.assertIn("Matt Chen</b> at <b>18.75", html)
+        self.assertEqual(html.count("Brenton Wu"), 2)
+        self.assertEqual(html.count("MOST LOADED"), 2)
+
+
 @unittest.skipUnless(
     os.environ.get("RUN_LOADING_DB_TESTS") == "1",
     "Set RUN_LOADING_DB_TESTS=1 to run read-only PostgreSQL fixture queries.",

@@ -63,6 +63,14 @@ Run `run_offload_loading_summary_daily.bat` to analyze workload and generate dai
 run_offload_loading_summary_daily.bat
 ```
 
+The summary email contains separate colorful Wi-Fi and BT weighted-loading bar charts and highlights the most-loaded engineer in each group. To schedule it for the full team at 08:00 each day under the current interactive Windows account:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Register-DailyLoadingSummaryTask.ps1
+```
+
+Use `-Time "09:30"` to select another local time. The first delegated Graph run may require Microsoft sign-in so the cached token can send subsequent scheduled messages.
+
 ### Offload Reporter & Reassignment Engine
 Run `run_offload_reporter_issues.bat` directly or with options:
 ```cmd
@@ -105,6 +113,26 @@ Loading counts, issue details, and category weights use the same current-calenda
 Read-only PostgreSQL regression tests use in-query fixtures without changing database records. In PowerShell, run `$env:RUN_LOADING_DB_TESTS='1'; python -m unittest discover -s tests -p test_loading_eligibility.py` with the project environment and database connectivity available.
 
 While the dashboard server is running, it starts a snapshot-only refresh at startup and every 10 minutes, even with no browser open. Automatic refreshes share the manual batch lock and skip a tick if a batch is still running. Output is appended to `logs/loading_auto_refresh.log`; launch failures are retried on the next tick. This reads the database without updating it, sending notifications, or changing offload history. Existing browser tabs still need a page refresh to display the newly saved snapshot. Restart the server after upgrading to enable the timer; no separate Scheduled Task is required for the refresh loop.
+
+Each saved loading snapshot is also audited by `loading_quality_monitor.py`. The deterministic checks reconcile displayed weighted load and active issue counts against issue details, then flag stale snapshots, missing or identifier-only/tag-only titles, test/placeholder language, issues older than `LOADING_QUALITY_OLD_ISSUE_DAYS` (default 30), invalid weights, missing identifiers, and issues assigned to more than one loading row. The latest report is written to `cache/loading_quality_latest.json`; audit failures are non-fatal and never change loading counts or offload decisions.
+
+Optional AI review is disabled by default. After approving the processing of issue metadata by the configured internal model, set `LOADING_QUALITY_AI_ENABLED=1`; `GNAI_TOKEN`, `GNAI_URL`, and `GNAI_MODEL` provide the existing model configuration. AI recommends `retain`, `investigate`, `remove`, or `reweight` for suspicious candidates, with a confidence and evidence-based reason. Age alone is treated as a review signal, not proof that an issue should be removed.
+
+Set `LOADING_QUALITY_EMAIL_ALERTS=1` to send a scoped email to every affected engineer, with `LOADING_QUALITY_SUPERVISOR_EMAIL` included on each message. The default supervisor is `jonathan.tsao@intel.com`. Alerts send only when the deterministic finding set changes; unrelated database refreshes do not cause repeat emails. SMTP uses the same settings as the category review reminder.
+
+The dashboard backend already performs snapshot refresh and quality monitoring every 10 minutes. On a machine that does not run the backend, register the standalone 30-minute task from an elevated PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Register-LoadingQualityMonitorTask.ps1
+```
+
+Run a one-time check with:
+
+```cmd
+python loading_quality_monitor.py --no-email
+```
+
+A return code of `0` means no findings and `2` means the report contains warnings or errors. Use `--force-email` to send the current findings immediately, `--email you@example.com` to override all recipients for testing, or `--no-email` to prevent delivery.
 
 The source workbook is excluded from Git because it contains internal team data. The Python API binds to loopback for the IIS reverse-proxy setup in `web.config`; the IIS site itself must remain restricted to the intended internal network because the dashboard does not require individual sign-in.
 

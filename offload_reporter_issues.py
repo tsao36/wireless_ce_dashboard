@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from html import escape
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from Wireless_bug_dashboard import DbConnector  # type: ignore
@@ -423,10 +424,14 @@ def _source_created_date_expr(columns: set[str], source: str) -> str:
 
 def _title_expr(columns: Optional[set] = None) -> str:
     parts = []
+    if columns is not None and _has(columns, "jira_summary"):
+        parts.append("NULLIF(NULLIF(TRIM(jira_summary), ''), 'NA')")
+    if columns is not None and _has(columns, "hsd_title"):
+        parts.append("NULLIF(NULLIF(TRIM(hsd_title), ''), 'NA')")
     if columns is None or _has(columns, "ips_title"):
         parts.append("NULLIF(NULLIF(TRIM(ips_title), ''), 'NA')")
-    # Only include jira_title when ips_title is absent (jira_title may exist in
-    # information_schema but not be selectable in some table configurations)
+    # Only include jira_title when newer title columns are absent (jira_title
+    # may exist in information_schema but not be selectable in some tables).
     if not parts and (columns is None or _has(columns, "jira_title")):
         parts.append("NULLIF(NULLIF(TRIM(jira_title), ''), 'NA')")
     if not parts:
@@ -3541,6 +3546,47 @@ def _build_email_body_html(
     )
 
 
+def _loading_group_charts_html(rows: Sequence[Dict[str, Any]]) -> str:
+    charts: List[str] = []
+    for group, label, bar_color in (
+        ("wifi", "Wi-Fi Loading", "#168AAD"),
+        ("bt", "BT Loading", "#D97706"),
+    ):
+        group_rows = [row for row in rows if group in _groups_for_reporter(str(row.get("name") or ""))]
+        group_rows.sort(key=lambda row: (-float(row.get("weighted_loading_value") or 0.0), str(row.get("name") or "").casefold()))
+        if not group_rows:
+            continue
+        maximum = max(float(row.get("weighted_loading_value") or 0.0) for row in group_rows) or 1.0
+        leader = group_rows[0]
+        bars: List[str] = []
+        for row in group_rows:
+            name = str(row.get("name") or "").strip()
+            loading = float(row.get("weighted_loading_value") or 0.0)
+            width = max(8, round(loading / maximum * 100, 1))
+            is_leader = row is leader
+            leader_badge = " <span class='leader-badge'>MOST LOADED</span>" if is_leader else ""
+            bars.append(
+                "<tr>"
+                f"<td class='chart-name'>{escape(name)}{leader_badge}</td>"
+                "<td class='chart-track'>"
+                f"<div class='chart-fill{' chart-leader' if is_leader else ''}' style='width:{width}%;background:{bar_color}'>&nbsp;</div>"
+                "</td>"
+                f"<td class='chart-value'>{loading:.2f}</td>"
+                "</tr>"
+            )
+        charts.append(
+            f"<div class='chart-card chart-{group}'>"
+            f"<h3>{label}</h3>"
+            f"<p class='subtle'>Highest current weighted loading: <b>{escape(str(leader.get('name') or ''))}</b> at <b>{maximum:.2f}</b>.</p>"
+            "<table class='chart-table' role='presentation'>"
+            + "".join(bars)
+            + "</table></div>"
+        )
+    if not charts:
+        return "<div class='card'><h3>Current Loading</h3><p>No Wi-Fi or BT reporter loading data is available.</p></div>"
+    return "<div class='charts'>" + "".join(charts) + "</div>"
+
+
 def _build_loading_summary_email_html(
     *,
     combined_trial_categories: Optional[List[str]],
@@ -3612,44 +3658,11 @@ def _build_loading_summary_email_html(
     default_weight, category_weight_defs, category_tech_weight_defs = _load_weighting_definition(weight_map_path)
 
     if combined_trial_rows:
-        header_html = (
-            "<tr>"
-            "<th>Name</th><th>uIPS</th><th>Active IPS</th><th>uHSD</th><th>Active HSD</th><th>Jira</th><th>Stale IPS</th><th>Stale HSD</th>"
-            "<th>Total</th><th>Weighted Loading</th>"
-            + "".join(f"<th>{escape(cat)}</th>" for cat in combined_trial_categories)
-            + "</tr>"
-        )
-
-        body_rows: List[str] = []
-        for row in combined_trial_rows:
-            category_counts = row.get("category_counts") or {}
-            body_rows.append(
-                "<tr>"
-                f"<td>{escape(str(row.get('name') or ''))}</td>"
-                f"<td class='num'>{int(row.get('uips') or 0)}</td>"
-                f"<td class='num'>{int(row.get('active_uips') or 0)}</td>"
-                f"<td class='num'>{int(row.get('uhsd') or 0)}</td>"
-                f"<td class='num'>{int(row.get('active_hsd') or 0)}</td>"
-                f"<td class='num'>{int(row.get('jira') or 0)}</td>"
-                f"<td class='num'>{int(row.get('stale_ips') or 0)}</td>"
-                f"<td class='num'>{int(row.get('stale_hsd') or 0)}</td>"
-                f"<td class='num'>{int(row.get('total') or 0)}</td>"
-                f"<td class='num weighted'>{escape(str(row.get('weighted_loading') or ''))}</td>"
-                + "".join(
-                    f"<td class='num'>{int(category_counts.get(cat, 0))}</td>"
-                    for cat in combined_trial_categories
-                )
-                + "</tr>"
-            )
-
         table_html = (
             "<div class='card'>"
-            "<h3>Current Reporter Loading Table</h3>"
-            "<div class='subtle'>Daily snapshot including weighted loading and active issue category distribution.</div>"
-            "<table class='tbl'>"
-            f"{header_html}"
-            + "".join(body_rows)
-            + "</table>"
+            "<h3>Current Weighted Reporter Loading</h3>"
+            "<div class='subtle'>Longer bars indicate higher current weighted loading. Each group highlights its most-loaded engineer.</div>"
+            f"{_loading_group_charts_html(combined_trial_rows)}"
             "</div>"
         )
     else:
@@ -3756,7 +3769,18 @@ def _build_loading_summary_email_html(
         ".compact td,.compact th{padding:6px;}"
         ".mono{margin:8px 0 0 0;padding:10px;background:#f7fafc;border:1px solid #d8e1ea;border-radius:8px;font-family:Consolas,Menlo,monospace;font-size:12px;line-height:1.35;white-space:pre;overflow-x:auto;}"
         ".grid{display:grid;grid-template-columns:1fr 1.3fr;gap:14px;}"
-        "@media(max-width:960px){.grid{grid-template-columns:1fr;}}"
+        ".charts{display:table;width:100%;table-layout:fixed;border-spacing:10px 0;margin:8px -10px 0;}"
+        ".chart-card{display:table-cell;width:50%;padding:14px;border:1px solid #d8e1ea;border-radius:10px;background:#f8fbff;vertical-align:top;}"
+        ".chart-bt{background:#fff9ed;border-color:#f4c97a;}"
+        ".chart-card h3{margin-bottom:3px;}"
+        ".chart-table{width:100%;border-collapse:separate;border-spacing:0 7px;margin-top:8px;}"
+        ".chart-name{width:125px;padding-right:8px;font-size:12px;font-weight:700;vertical-align:middle;}"
+        ".chart-track{width:auto;height:22px;padding:0;background:#e7edf3;border-radius:6px;overflow:hidden;}"
+        ".chart-fill{height:22px;min-width:8px;border-radius:6px;}"
+        ".chart-leader{box-shadow:inset 0 0 0 3px #e11d48;}"
+        ".chart-value{width:48px;padding-left:8px;text-align:right;color:#0f2940;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;}"
+        ".leader-badge{display:inline-block;margin-top:3px;padding:2px 5px;color:#fff;background:#e11d48;border-radius:4px;font-size:9px;letter-spacing:.2px;}"
+        "@media(max-width:960px){.grid,.charts{display:block;width:auto;}.chart-card{display:block;width:auto;margin-bottom:12px;}}"
         "</style>"
         "</head><body><div class='wrap'>"
         "<div class='hero'><h2>IPS Daily Loading Summary</h2>"
@@ -3819,6 +3843,7 @@ def _save_loading_snapshot(
     snapshot_path = str(path or "team_loading_latest.json").strip()
     if not snapshot_path:
         return
+    snapshot_written = False
     payload = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "categories": [str(category) for category in categories],
@@ -3833,6 +3858,7 @@ def _save_loading_snapshot(
 
     try:
         _write_json(snapshot_path)
+        snapshot_written = True
         try:
             weekly_issue_path = _save_weekly_issue_snapshot(payload)
             LOG.info("Saved weekly issue snapshot: %s", weekly_issue_path)
@@ -3870,6 +3896,15 @@ def _save_loading_snapshot(
                 os.remove(temporary_path)
         except OSError:
             pass
+
+    if snapshot_written:
+        try:
+            from loading_quality_monitor import run_monitor
+
+            report = run_monitor(Path(snapshot_path))
+            LOG.info("Loading quality %s: %d finding(s).", report.get("status"), len(report.get("findings") or []))
+        except Exception as exc:
+            LOG.warning("Loading quality monitor failed after snapshot save: %s", exc)
 
 
 def _append_history_entry(
