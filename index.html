@@ -134,7 +134,8 @@
     .activity-chart-name-button { max-width:100%; padding:4px 0; border:0; color:var(--ink); background:transparent; font:700 13px "Segoe UI",Tahoma,sans-serif; text-align:left; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; overflow-wrap:anywhere; cursor:pointer; }
     .activity-chart-name-button:hover,.activity-chart-name-button:focus-visible { color:var(--accent); outline:2px solid var(--accent); outline-offset:2px; }
     .activity-chart-name-button[aria-pressed="true"] { color:var(--accent); }
-    .activity-chart-legend { display:flex; flex-wrap:wrap; gap:12px; margin:-4px 0 10px; color:var(--muted); font-size:11px; }
+    .activity-chart-explainer { margin:-2px 0 8px; color:var(--muted); font-size:12px; line-height:1.45; }
+    .activity-chart-legend { display:flex; flex-wrap:wrap; gap:12px; margin:0 0 8px; color:var(--muted); font-size:11px; }
     .activity-chart-legend span { display:inline-flex; align-items:center; gap:5px; }
     .activity-chart-swatch { width:12px; height:12px; border-radius:3px; background:#BC704A; }
     .activity-chart-swatch.completed { background:#0873B9; }
@@ -312,7 +313,7 @@
         <button class="activity-refresh" type="button" id="activity-refresh">Refresh workbook</button>
       </div>
       <p class="activity-status" id="activity-status" role="status" aria-live="polite">Loading activity workbook...</p>
-      <section class="activity-chart-section" aria-labelledby="activity-chart-title"><div class="activity-chart-head"><h3 id="activity-chart-title">Activity loading by engineer</h3><span id="activity-chart-caption">Loading chart...</span></div><div class="activity-chart-legend" aria-label="Chart legend"><span><i class="activity-chart-swatch" aria-hidden="true"></i>Total tasks</span><span><i class="activity-chart-swatch completed" aria-hidden="true"></i>Completed tasks (Y)</span></div><div class="activity-chart" id="activity-chart" role="img" aria-label="Engineer activity loading chart"></div></section>
+      <section class="activity-chart-section" aria-labelledby="activity-chart-title"><div class="activity-chart-head"><h3 id="activity-chart-title">Activity loading by engineer</h3><span id="activity-chart-caption">Loading chart...</span></div><p class="activity-chart-explainer"><strong>Bar length = total tasks.</strong> Blue shows the portion completed (`Complete = Y`); orange is the remaining portion. The number at right is completed Y / total tasks, and Contribution is the sum of the worksheet's Contribution values.</p><div class="activity-chart-legend" aria-label="Chart legend"><span><i class="activity-chart-swatch" aria-hidden="true"></i>Incomplete or other status</span><span><i class="activity-chart-swatch completed" aria-hidden="true"></i>Completed (`Y`)</span></div><div class="activity-chart" id="activity-chart" role="img" aria-label="Engineer activity loading chart"></div></section>
       <div class="table-wrap activity-table-wrap" id="activity-table-wrap"><table class="activity-table activity-sortable-table"><thead id="activity-table-head"></thead><tbody id="activity-table-body"></tbody></table></div>
       <div class="activity-empty" id="activity-empty" hidden></div>
     </section>
@@ -583,7 +584,9 @@
               const width = Math.max(3, (item.tasks / maximum) * 100);
               const completedWidth = item.tasks ? (item.completed / item.tasks) * 100 : 0;
               const selected = activityEngineerFilter === item.name;
-              return `<div class="activity-chart-row"><span class="activity-chart-name"><button class="activity-chart-name-button" type="button" data-activity-engineer="${esc(item.name)}" aria-pressed="${selected}" aria-label="${selected ? 'Clear' : 'Show'} activity table filter for ${esc(item.name)}">${index === 0 ? '★ ' : ''}${esc(item.name)}</button></span><div class="activity-chart-track" style="width:${width}%" title="${item.tasks} total tasks, ${item.completed} completed (Y)"><div class="activity-chart-segment completed" style="width:${completedWidth}%"></div></div><span class="activity-chart-value"><strong>${item.completed}/${item.tasks}</strong>${metric}: ${item.score.toFixed(2)}</span></div>`;
+              const completedLabel = `${item.completed} completed (Y)`;
+              const totalLabel = `${item.tasks} total task${item.tasks === 1 ? '' : 's'}`;
+              return `<div class="activity-chart-row"><span class="activity-chart-name"><button class="activity-chart-name-button" type="button" data-activity-engineer="${esc(item.name)}" aria-pressed="${selected}" aria-label="${selected ? 'Clear' : 'Show'} activity table filter for ${esc(item.name)}">${index === 0 ? '★ ' : ''}${esc(item.name)}</button></span><div class="activity-chart-track" style="width:${width}%" title="${completedLabel} of ${totalLabel}"><div class="activity-chart-segment completed" style="width:${completedWidth}%"></div></div><span class="activity-chart-value"><strong title="${completedLabel} of ${totalLabel}">${item.completed}/${item.tasks} tasks</strong>${metric}: ${item.score.toFixed(2)}</span></div>`;
             }).join('');
             caption.textContent = `Total tasks with completed = Y overlay · ${data.length} engineer${data.length === 1 ? '' : 's'}`;
           }
