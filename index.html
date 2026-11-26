@@ -124,6 +124,22 @@
     .activity-refresh:hover,.activity-refresh:focus-visible { color:var(--ink); background:#E8B99E; outline:3px solid rgba(188,112,74,.28); }
     .activity-refresh:disabled { cursor:wait; opacity:.65; }
     .activity-status { min-height:20px; margin:0; padding:8px 20px; color:var(--muted); font:12px "Segoe UI",Tahoma,sans-serif; }
+    .activity-chart-section { padding:16px 20px 18px; border-bottom:1px solid var(--line); background:#F0F3F5; }
+    .activity-chart-head { display:flex; align-items:baseline; justify-content:space-between; gap:14px; margin-bottom:10px; }
+    .activity-chart-head h3 { margin:0; font-size:16px; }
+    .activity-chart-head span { color:var(--muted); font-size:12px; text-align:right; }
+    .activity-chart { display:grid; gap:8px; max-height:330px; overflow-y:auto; }
+    .activity-chart-row { display:grid; grid-template-columns:minmax(120px,190px) minmax(120px,1fr) 88px; align-items:center; gap:10px; min-height:30px; }
+    .activity-chart-name { min-width:0; }
+    .activity-chart-name-button { max-width:100%; padding:4px 0; border:0; color:var(--ink); background:transparent; font:700 13px "Segoe UI",Tahoma,sans-serif; text-align:left; text-decoration:underline; text-decoration-style:dotted; text-underline-offset:3px; overflow-wrap:anywhere; cursor:pointer; }
+    .activity-chart-name-button:hover,.activity-chart-name-button:focus-visible { color:var(--accent); outline:2px solid var(--accent); outline-offset:2px; }
+    .activity-chart-name-button[aria-pressed="true"] { color:var(--accent); }
+    .activity-chart-track { height:20px; overflow:hidden; background:#D8DCE4; border-radius:4px; }
+    .activity-chart-bar { height:100%; min-width:5px; background:var(--accent); border-radius:4px; }
+    .activity-chart-row:first-child .activity-chart-bar { background:#0873B9; }
+    .activity-chart-value { color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; text-align:right; }
+    .activity-chart-value strong { display:block; color:var(--ink); font-size:14px; }
+    .activity-chart-empty { padding:14px 0 2px; color:var(--muted); font-size:13px; }
     .activity-table-wrap { max-height:min(68vh,760px); overflow:auto; }
     .activity-table { width:max-content; min-width:100%; border-collapse:collapse; font:13px "Segoe UI",Tahoma,sans-serif; }
     .activity-table th { position:sticky; top:0; z-index:1; padding:10px 12px; color:#FAF9F3; background:var(--deep); text-align:left; white-space:normal; }
@@ -246,6 +262,10 @@
       .view-tab { flex:0 0 auto; }
       .activity-toolbar { display:grid; grid-template-columns:1fr 1fr; }
       .activity-toolbar label,.activity-toolbar input,.activity-toolbar select { min-width:0; width:100%; }
+      .activity-chart-section { padding:14px 16px; }
+      .activity-chart-head { align-items:flex-start; flex-direction:column; gap:4px; }
+      .activity-chart-head span { text-align:left; }
+      .activity-chart-row { grid-template-columns:minmax(90px,120px) minmax(70px,1fr) 62px; gap:7px; }
       .activity-table-wrap { overflow:auto; }
       .activity-table { min-width:640px; }
     }
@@ -289,6 +309,7 @@
         <button class="activity-refresh" type="button" id="activity-refresh">Refresh workbook</button>
       </div>
       <p class="activity-status" id="activity-status" role="status" aria-live="polite">Loading activity workbook...</p>
+      <section class="activity-chart-section" aria-labelledby="activity-chart-title"><div class="activity-chart-head"><h3 id="activity-chart-title">Activity loading by engineer</h3><span id="activity-chart-caption">Loading chart...</span></div><div class="activity-chart" id="activity-chart" role="img" aria-label="Engineer activity loading chart"></div></section>
       <div class="table-wrap activity-table-wrap" id="activity-table-wrap"><table class="activity-table activity-sortable-table"><thead id="activity-table-head"></thead><tbody id="activity-table-body"></tbody></table></div>
       <div class="activity-empty" id="activity-empty" hidden></div>
     </section>
@@ -369,6 +390,7 @@
     const activitySortState = { key: null, direction: 'desc', clickedKey: null };
     const activityValueCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
     let activitySortSheet = '';
+    let activityEngineerFilter = '';
     let activityLoading = false;
     let yearlyLoading = false;
     let yearlyLoaded = false;
@@ -512,20 +534,77 @@
       const hasActiveFilters = Boolean(document.querySelector('#name-filter').value || document.querySelector('#category-filter').value || currentTeamFilter !== 'all' || currentOemFilter);
       document.querySelector('#clear-filters').hidden = !hasActiveFilters;
     }
+          function renderActivityChart(sheet, rows) {
+            const chart = document.querySelector('#activity-chart');
+            const caption = document.querySelector('#activity-chart-caption');
+            if (!sheet) {
+              chart.innerHTML = '<div class="activity-chart-empty">No engineer activity data is available.</div>';
+              caption.textContent = 'No worksheet selected';
+              return;
+            }
+            const labels = sheet.columns.map(column => String(column.label || '').trim().toLowerCase());
+            const ownerIndex = labels.findIndex(label => /^(owner|engineer|assignee|technical owner)$/.test(label));
+            const completedIndex = labels.findIndex(label => /^(complete|completed|status)$/.test(label));
+            const scoreIndex = labels.findIndex(label => /^(contribution|activity loading|loading|workload)$/.test(label));
+            if (ownerIndex < 0) {
+              chart.innerHTML = '<div class="activity-chart-empty">This worksheet has no owner or engineer column.</div>';
+              caption.textContent = `Current worksheet: ${sheet.name}`;
+              return;
+            }
+            const completedValues = new Set(['y', 'yes', 'done', 'complete', 'completed', 'closed', '1', 'true']);
+            const groups = new Map();
+            rows.forEach(row => {
+              const owner = String(row.values[ownerIndex] ?? '').trim();
+              const ownerKey = owner.toLowerCase();
+              if (!owner || ['looking for owner', 'unassigned', 'tbd', 'na', 'n/a'].includes(ownerKey)) return;
+              const completed = completedIndex >= 0 && completedValues.has(String(row.values[completedIndex] ?? '').trim().toLowerCase());
+              if (completed) return;
+              const rawScore = scoreIndex >= 0 ? String(row.values[scoreIndex] ?? '').replaceAll(',', '').replace('%', '').trim() : '1';
+              const parsedScore = Number(rawScore);
+              const score = Number.isFinite(parsedScore) ? parsedScore : 0;
+              if (!groups.has(owner)) groups.set(owner, { name: owner, score: 0, tasks: 0 });
+              const group = groups.get(owner);
+              group.score += score;
+              group.tasks += 1;
+            });
+            const data = [...groups.values()].sort((left, right) => right.score - left.score || right.tasks - left.tasks || left.name.localeCompare(right.name));
+            if (!data.length) {
+              chart.innerHTML = '<div class="activity-chart-empty">No incomplete activities match the current filters.</div>';
+              caption.textContent = scoreIndex >= 0 ? `${sheet.columns[scoreIndex].label} totals · ${sheet.name}` : `Active task count · ${sheet.name}`;
+              return;
+            }
+            const metric = scoreIndex >= 0 ? String(sheet.columns[scoreIndex].label || 'Contribution') : 'Active tasks';
+            const maximum = Math.max(...data.map(item => item.score), 1);
+            chart.setAttribute('aria-label', `${metric} by engineer for ${sheet.name}`);
+            chart.innerHTML = data.map((item, index) => {
+              const width = Math.max(3, Math.round((item.score / maximum) * 100));
+              const taskLabel = `${item.tasks} task${item.tasks === 1 ? '' : 's'}`;
+              const selected = activityEngineerFilter === item.name;
+              return `<div class="activity-chart-row"><span class="activity-chart-name"><button class="activity-chart-name-button" type="button" data-activity-engineer="${esc(item.name)}" aria-pressed="${selected}" aria-label="${selected ? 'Clear' : 'Show'} activity table filter for ${esc(item.name)}">${index === 0 ? '★ ' : ''}${esc(item.name)}</button></span><div class="activity-chart-track" aria-hidden="true"><div class="activity-chart-bar" style="width:${width}%"></div></div><span class="activity-chart-value"><strong>${item.score.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong>${taskLabel}</span></div>`;
+            }).join('');
+            caption.textContent = `${metric} · incomplete rows · ${data.length} engineer${data.length === 1 ? '' : 's'}`;
+          }
+
           function renderActivitySheet() {
             const category = document.querySelector('#activity-category').value;
             const selectedName = document.querySelector('#activity-sheet').value;
             const search = document.querySelector('#activity-search').value.trim().toLowerCase();
             const sheet = currentActivity.sheets.find(item => item.name === selectedName && (!category || item.category === category));
             const head = document.querySelector('#activity-table-head'); const body = document.querySelector('#activity-table-body'); const empty = document.querySelector('#activity-empty');
-            if (!sheet) { head.innerHTML = ''; body.innerHTML = ''; empty.hidden = false; empty.textContent = currentActivity.message || 'No worksheet is available for this area.'; document.querySelector('#activity-record-count').textContent = 'No data'; return; }
+            if (!sheet) { head.innerHTML = ''; body.innerHTML = ''; renderActivityChart(null, []); empty.hidden = false; empty.textContent = currentActivity.message || 'No worksheet is available for this area.'; document.querySelector('#activity-record-count').textContent = 'No data'; return; }
             if (activitySortSheet !== sheet.name) {
               activitySortSheet = sheet.name;
+              activityEngineerFilter = '';
               activitySortState.key = null;
               activitySortState.direction = 'desc';
               activitySortState.clickedKey = null;
             }
-            const rows = sheet.rows.filter(row => row.row !== 1 && (!search || row.values.map(value => String(value ?? '')).join(' ').toLowerCase().includes(search)));
+            const chartRows = sheet.rows.filter(row => row.row !== 1 && (!search || row.values.map(value => String(value ?? '')).join(' ').toLowerCase().includes(search)));
+            renderActivityChart(sheet, chartRows);
+            const ownerIndex = sheet.columns.findIndex(column => /^(owner|engineer|assignee|technical owner)$/i.test(String(column.label || '').trim()));
+            const rows = activityEngineerFilter && ownerIndex >= 0
+              ? chartRows.filter(row => String(row.values[ownerIndex] ?? '').trim() === activityEngineerFilter)
+              : chartRows;
             if (activitySortState.key !== null) {
               const columnIndex = Number(activitySortState.key.slice('activity-'.length));
               rows.sort((left, right) => {
@@ -969,6 +1048,13 @@
         document.querySelector('#activity-category').addEventListener('change', () => updateActivitySheets());
         document.querySelector('#activity-sheet').addEventListener('change', renderActivitySheet);
         document.querySelector('#activity-search').addEventListener('input', renderActivitySheet);
+        document.querySelector('#activity-chart').addEventListener('click', event => {
+          const button = event.target.closest('button[data-activity-engineer]');
+          if (!button) return;
+          const engineer = button.dataset.activityEngineer;
+          activityEngineerFilter = activityEngineerFilter === engineer ? '' : engineer;
+          renderActivitySheet();
+        });
         document.querySelector('#activity-refresh').addEventListener('click', () => loadActivity(true));
         document.querySelector('#activity-table-head').addEventListener('click', event => {
           const button = event.target.closest('button[data-sort-key^="activity-"]');
