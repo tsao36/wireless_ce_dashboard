@@ -2360,6 +2360,7 @@ def _get_unpromoted_ips_rows_for_weighting(
         technology_expr = "NULL"
     title_expr = _title_expr(columns)
     customer_expr = "customer" if _has(columns, "customer") else "NULL"
+    ips_url_expr = "ips_url" if _has(columns, "ips_url") else "NULL"
     # Same match as the Field Issues page (loading_dashboard._load_field_issues).
     field_issue_parts = [
         f"COALESCE({name}::text, '') ILIKE '%field issue%'"
@@ -2375,6 +2376,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             MAX(ips_case_number_display) AS ips_case_number,
             MAX(hsd_id::text) AS hsd_id,
             MAX(jira_id::text) AS jira_id,
+            MAX(COALESCE(ips_url::text, '')) AS ips_url,
             MAX(ips_issue_created_date) AS created,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
@@ -2400,6 +2402,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             MAX(ips_case_number_display) AS ips_case_number,
             MAX(hsd_id::text) AS hsd_id,
             MAX(jira_id::text) AS jira_id,
+            MAX(COALESCE(ips_url::text, '')) AS ips_url,
             MAX(jira_issue_created_date) AS created,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
@@ -2423,6 +2426,7 @@ def _get_unpromoted_ips_rows_for_weighting(
             MAX(ips_case_number_display) AS ips_case_number,
             MAX(hsd_id::text) AS hsd_id,
             MAX(jira_id::text) AS jira_id,
+            MAX(COALESCE(ips_url::text, '')) AS ips_url,
             MAX(hsd_issue_created_date) AS created,
             MAX(COALESCE(title, '')) AS title,
             MAX(COALESCE(technology::text, '')) AS technology,
@@ -2457,6 +2461,7 @@ def _get_unpromoted_ips_rows_for_weighting(
                 {jira_created_expr} AS jira_issue_created_date,
                 {hsd_created_expr} AS hsd_issue_created_date,
                 {title_expr} AS title,
+                {ips_url_expr} AS ips_url,
                 {field_issue_expr} AS is_field_issue,
                 {created_expr} AS created_date,
                 {ips_status_expr} AS ips_status,
@@ -2629,6 +2634,7 @@ def _build_weighted_summary(
             "category": category,
             "issue_weight": 1.0 if source_type == "hsd" else float(row.get("issue_weight") or 0.0),
             "ips_case_number": str(row.get("ips_case_number") or "").strip(),
+            "ips_url": str(row.get("ips_url") or "").strip(),
             "ips_title": str(row.get("title") or "").strip(),
             "hsd_id": str(row.get("hsd_id") or "").strip(),
             "jira_id": str(row.get("jira_id") or "").strip(),
