@@ -96,7 +96,38 @@ class LoadingQualityMonitorTests(unittest.TestCase):
         report = audit_snapshot(payload, now=datetime(2026, 11, 26, 13, tzinfo=timezone.utc))
         duplicate = [finding for finding in report["findings"] if finding["code"] == "duplicate_issue_assignment"]
         self.assertEqual(len(duplicate), 2)
+        self.assertNotIn("duplicate_issue_title", {finding["code"] for finding in report["findings"]})
         self.assertEqual(report["status"], "error")
+
+    def test_duplicate_titles_on_distinct_issues_are_ai_candidates(self):
+        payload = {
+            "generated_at": "2026-11-26T12:00:00+00:00",
+            "rows": [{
+                "name": "A",
+                "issue_details": [
+                    {
+                        "ips_case_number": "1039550",
+                        "ips_url": "https://intel.lightning.force.com/case/1039550",
+                        "ips_title": "[NVL][Samsung] Data TPUT performance decreases on 11n 44ch Downlink",
+                        "issue_weight": 2.64,
+                    },
+                    {
+                        "ips_case_number": "1039614",
+                        "ips_url": "https://intel.lightning.force.com/case/1039614",
+                        "ips_title": "  [nvl][samsung]   Data TPUT performance decreases on 11n 44ch Downlink ",
+                        "issue_weight": 2.64,
+                    },
+                ],
+            }],
+        }
+
+        report = audit_snapshot(payload, now=datetime(2026, 11, 26, 13, tzinfo=timezone.utc))
+        duplicates = [finding for finding in report["findings"] if finding["code"] == "duplicate_issue_title"]
+        self.assertEqual(len(duplicates), 2)
+        self.assertEqual({finding["ips_case_number"] for finding in duplicates}, {"1039550", "1039614"})
+        self.assertTrue(all(finding["duplicate_issue_count"] == 2 for finding in duplicates))
+        self.assertEqual(len(_ai_candidates(report["findings"])), 2)
+        self.assertEqual(report["status"], "warning")
 
     def test_ai_candidates_merge_multiple_signals_for_one_issue(self):
         findings = [

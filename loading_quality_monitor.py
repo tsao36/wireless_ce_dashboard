@@ -113,6 +113,7 @@ def audit_snapshot(
         })
 
     occurrences: dict[tuple[str, str], list[str]] = defaultdict(list)
+    title_occurrences: dict[str, dict[tuple[tuple[str, str], ...], tuple[str, dict[str, Any]]]] = defaultdict(dict)
     issue_count = 0
     for row in rows:
         if not isinstance(row, dict):
@@ -208,6 +209,10 @@ def audit_snapshot(
             for kind, value in identifiers:
                 if value:
                     occurrences[(kind, value)].append(owner)
+            identity = tuple((kind, value) for kind, value in identifiers if value)
+            normalized_title = " ".join(title.casefold().split())
+            if identity and normalized_title and inspect_title(title) is None:
+                title_occurrences[normalized_title].setdefault(identity, (owner, issue))
             try:
                 weight = float(issue.get("issue_weight"))
                 if weight <= 0:
@@ -224,6 +229,24 @@ def audit_snapshot(
                 "owners": owners,
                 "identifier": value,
             })
+
+    for matches in title_occurrences.values():
+        if len(matches) < 2:
+            continue
+        identities = sorted(
+            f"{kind.upper()} {value}"
+            for identity in matches
+            for kind, value in identity
+        )
+        for owner, issue in matches.values():
+            finding = _issue_finding(
+                issue,
+                owner,
+                "duplicate_issue_title",
+                f"The same normalized title appears on multiple distinct issues: {', '.join(identities)}. Verify status and possible duplicate loading.",
+            )
+            finding["duplicate_issue_count"] = len(matches)
+            findings.append(finding)
 
     severity_rank = {"info": 0, "warning": 1, "error": 2}
     findings.sort(key=lambda item: (-severity_rank.get(str(item.get("severity")), 0), str(item.get("code")), str(item.get("owner"))))
@@ -371,8 +394,9 @@ def review_with_ai(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "Treat deterministic findings as signals, not proof. Review title, category, age, owner, "
                     "source type, identifiers, and weight. A title containing test/sanity/sample/ignore language "
                     "may be non-customer work; an old active issue may still be valid, so do not recommend removal "
-                    "from age alone. Return JSON with an 'items' array. Each item must include "
-                    "'ips_case_number', 'jira_id', 'severity' (info/warning/error), "
+                    "from age alone. Duplicate-title findings need investigation because distinct issues can reuse "
+                    "a title, but may indicate duplicate active loading or a closed stale entry. Return JSON with an "
+                    "'items' array. Each item must include 'ips_case_number', 'jira_id', 'severity' (info/warning/error), "
                     "'recommendation' (retain/investigate/remove/reweight), 'confidence' (0 to 1), and 'reason'. "
                     "Recommend remove only for strong evidence; recommend investigate for uncertain old or test-like cases. "
                     "For reweight, say which category/weight evidence appears inconsistent. Be concise, do not invent facts, "
