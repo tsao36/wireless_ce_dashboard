@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>2027 PRIZE | Wireless CE Year-End Party</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700&family=Playfair+Display:wght@600;700;800&display=swap');
+    :root {
+      --ink: #151515;
+      --paper: #f8f3e8;
+      --gold: #d6a62d;
+      --gold-deep: #8a6412;
+      --red: #b8322a;
+      --blue: #07518a;
+      --line: rgba(21, 21, 21, .16);
+      --serif: "Playfair Display", Georgia, serif;
+      --sans: "DM Sans", "Trebuchet MS", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      color: var(--ink);
+      background:
+        linear-gradient(rgba(248, 243, 232, .93), rgba(248, 243, 232, .93)),
+        repeating-linear-gradient(45deg, transparent 0 18px, rgba(138, 100, 18, .13) 18px 19px),
+        var(--paper);
+      font-family: var(--sans);
+    }
+    a { color: inherit; }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px clamp(18px, 4vw, 56px);
+      border-bottom: 1px solid var(--line);
+      background: rgba(248, 243, 232, .94);
+      backdrop-filter: blur(14px);
+    }
+    .brand {
+      font-family: var(--serif);
+      font-size: 17px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .actions { display: flex; align-items: center; gap: 10px; }
+    .button {
+      display: inline-flex;
+      min-height: 38px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border: 1px solid var(--ink);
+      border-radius: 4px;
+      color: #fff;
+      background: var(--ink);
+      font: 700 13px var(--sans);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .button:hover, .button:focus-visible { color: var(--ink); background: var(--gold); outline: 3px solid rgba(214, 166, 45, .3); }
+    .album-button { color: var(--ink); background: var(--gold); border-color: var(--gold-deep); }
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      min-height: min(72vh, 720px);
+      place-items: end start;
+      overflow: hidden;
+      border-bottom: 1px solid var(--line);
+      background: #262018;
+    }
+    .hero-image {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center 48%;
+      opacity: .76;
+      filter: saturate(.92) contrast(1.04);
+      animation: hero-in 900ms ease-out both;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, rgba(10, 10, 10, .9) 0%, rgba(10, 10, 10, .42) 52%, rgba(10, 10, 10, .05) 100%);
+    }
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      width: min(760px, 100%);
+      min-width: 0;
+      padding: clamp(42px, 7vw, 92px) clamp(22px, 6vw, 82px);
+      color: #fff;
+      animation: reveal 700ms 180ms ease-out both;
+    }
+    .eyebrow {
+      display: block;
+      margin-bottom: 14px;
+      color: #f5cb57;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      max-width: 700px;
+      font: 800 clamp(52px, 10vw, 120px)/.92 var(--serif);
+      letter-spacing: 0;
+    }
+    .hero-copy {
+      max-width: 590px;
+      margin: 22px 0 26px;
+      color: rgba(255, 255, 255, .88);
+      font-size: clamp(16px, 2vw, 20px);
+      line-height: 1.55;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+    .gallery-section { padding: clamp(38px, 6vw, 78px) clamp(18px, 5vw, 70px) 84px; }
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 26px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--line);
+    }
+    .section-head h2 { margin: 0; font: 700 clamp(30px, 4vw, 48px)/1 var(--serif); }
+    .count { color: var(--gold-deep); font-size: 13px; font-weight: 700; }
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .prize {
+      position: relative;
+      min-width: 0;
+      padding: 0;
+      overflow: hidden;
+      border: 1px solid rgba(21, 21, 21, .22);
+      border-radius: 4px;
+      aspect-ratio: 3 / 4;
+      background: #ddd4c3;
+      cursor: zoom-in;
+      animation: reveal 520ms ease-out both;
+    }
+    .prize:nth-child(3n) { transform: translateY(12px); }
+    .prize img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 300ms ease, filter 300ms ease;
+    }
+    .prize:hover img, .prize:focus-visible img { transform: scale(1.035); filter: brightness(.82); }
+    .prize:focus-visible { outline: 4px solid var(--red); outline-offset: 3px; }
+    .prize-label {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
+      left: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 9px 11px;
+      color: #fff;
+      background: rgba(12, 12, 12, .78);
+      font-size: 12px;
+      font-weight: 700;
+      opacity: 0;
+      transition: opacity 200ms ease;
+    }
+    .prize:hover .prize-label, .prize:focus-visible .prize-label { opacity: 1; }
+    .lightbox {
+      width: min(92vw, 960px);
+      max-width: none;
+      padding: 0;
+      overflow: visible;
+      border: 0;
+      background: transparent;
+      color: #fff;
+    }
+    .lightbox::backdrop { background: rgba(8, 8, 8, .9); backdrop-filter: blur(7px); }
+    .lightbox-inner { position: relative; display: grid; place-items: center; min-height: 70vh; }
+    .lightbox img { max-width: 100%; max-height: 84vh; object-fit: contain; box-shadow: 0 24px 80px rgba(0, 0, 0, .45); }
+    .close-lightbox {
+      position: absolute;
+      z-index: 2;
+      top: 10px;
+      right: 10px;
+      width: 38px;
+      height: 38px;
+      border: 1px solid rgba(255, 255, 255, .65);
+      border-radius: 50%;
+      color: #fff;
+      background: rgba(0, 0, 0, .72);
+      font: 700 22px/1 var(--sans);
+      cursor: pointer;
+    }
+    .lightbox-caption { margin-top: 12px; text-align: center; font-weight: 700; }
+    footer { padding: 22px; border-top: 1px solid var(--line); text-align: center; font-size: 12px; color: #5e5547; }
+    @keyframes reveal { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes hero-in { from { opacity: .35; transform: scale(1.04); } to { opacity: .76; transform: scale(1); } }
+    @media (max-width: 860px) { .gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hero { min-height: 620px; } }
+    @media (max-width: 600px) {
+      .topbar { align-items: center; gap: 8px; padding-inline: 14px; }
+      .brand { font-size: 14px; }
+      .actions { gap: 6px; }
+      .button { padding: 8px 9px; font-size: 11px; }
+      .album-button { max-width: 122px; text-align: center; }
+      .hero { min-height: 560px; }
+      .hero::after { background: linear-gradient(0deg, rgba(8, 8, 8, .92), rgba(8, 8, 8, .22)); }
+      .hero-content { width: 100%; max-width: 100%; padding-top: 220px; padding-inline: 22px; }
+      h1 { font-size: 36px; }
+      .hero-copy { max-width: 100%; font-size: 15px; }
+      .gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+      .prize:nth-child(3n) { transform: none; }
+      .section-head { align-items: flex-start; flex-direction: column; }
+      .prize-label { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html">Wireless CE Team</a>
+    <nav class="actions" aria-label="Prize page navigation">
+      <a class="button" href="index.html">Dashboard</a>
+      <a class="button album-button" href="https://photos.app.goo.gl/nGhPx6gMRjqmHste7" target="_blank" rel="noopener noreferrer">Open Google Photos</a>
+    </nav>
+  </header>
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <img class="hero-image" id="hero-image" alt="Prize collection for the Wireless CE year-end party">
+      <div class="hero-content">
+        <span class="eyebrow">Wireless CE year-end party</span>
+        <h1 id="page-title">2027 PRIZE</h1>
+        <p class="hero-copy">A first look at this year's 2027 一番賞 prize lineup. Open any photo for a closer view, then pick a favorite before the party.</p>
+        <div class="hero-actions">
+          <a class="button album-button" href="#gallery">View prize gallery</a>
+          <a class="button" href="https://photos.app.goo.gl/nGhPx6gMRjqmHste7" target="_blank" rel="noopener noreferrer">View full album</a>
+        </div>
+      </div>
+    </section>
+    <section class="gallery-section" id="gallery" aria-labelledby="gallery-title">
+      <div class="section-head">
+        <div><span class="eyebrow" style="color:var(--red)">The collection</span><h2 id="gallery-title">Find your lucky pick</h2></div>
+        <span class="count" id="photo-count">Loading prizes...</span>
+      </div>
+      <div class="gallery" id="prize-gallery"></div>
+    </section>
+  </main>
+  <footer>Wireless CE Team &middot; Year-End Party 2026 &middot; Images linked from Google Photos</footer>
+  <dialog class="lightbox" id="lightbox" aria-labelledby="lightbox-caption">
+    <div class="lightbox-inner">
+      <button class="close-lightbox" id="close-lightbox" type="button" aria-label="Close prize preview">&times;</button>
+      <img id="lightbox-image" alt="">
+    </div>
+    <div class="lightbox-caption" id="lightbox-caption"></div>
+  </dialog>
+  <script>
+    const albumUrl = 'https://photos.app.goo.gl/nGhPx6gMRjqmHste7';
+    const imageUrls = [
+      'https://lh3.googleusercontent.com/pw/AP1GczPHLCnQR9MhH8t48hcNjGkQGZ0zuhAz5U1cl1Hkexznt7fqKZUwQxSkqJDcEpuFaa7-Fb180KL5RUFHddzG3z1tiOtOHPQ952vjeRCXpB3u66tIcuCo=w900-h1125-p-k-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczMIiYWte7rTgh37gLi-Y01yIIrGhr39TQJFEaxfVHnKqd4SGwpFBXMxVDu3tCSMW5X9aCHmJn4al_bjueNGLx6GSkHpqPg9lcwdMPcJri8ZseTpxZtD=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczPthP7XX05q7XwyHzmOcZwbi0jZ5D-BKVBiq6LHRybTHnBAFOb9jvHtA-ulsd3ji4UIdYGkLIijIHXsaNEXz0wkVx1HpU1o2Jg94l7z5R5kN9iQeRR1=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczMZIjcCFPKVTNCz_dIrROZYXeO_6-Syg_ofKyHK46AZHa4ApoFFmyNg4q3Q3UX71VkYYFwaL0kJ0am-6oSKwhkTfvXB-LnIE4YwgFpRcx_X7Z2pURDA=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczNL_j4i_8EKbME6bs8QRG1V9T5-g7alIh6PDlJaJY7eWxjaTQpQbbrXEvK4IQGE9S5VorxOSunsvwlI5r8ZnDPmye2dJDSeXcIvzPYpT9rSTtJYKKsX=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczNfWHsgG3KbTfCBemBfcRm2ENM3Vzd_0KheS-A9lIwk8iMpWZFnZAHu_5L1D1pND3PbJ9JLoIAFoVK1SE7TP6QKx8hNMJW_fOLqIucADydpOcuxqGaS=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczOVsjpkGqegCtfqiPi-6qnxaQKm4IAhg16YQZ5qWAgcrPbtcE8gf8zm4St-ueuqrWwVgS016JoxQo6FM1UXWLZ0edd9OvFlst_hmEd3I9GZY2tCl3-h=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczNjDz_MZ7cP6RWxWItrcw4fi12B5N_C73SgXXNz6HRZxx-KUZVKJVW2dTkCe0chLkpTU7_6xQX7B4-g2srKWaiH9REcacNXksgKANNNTaJRwCyt1z3S=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczMUIQ-OevDklpjrk6_5SphbDC9IZ0rVywSiOKHs9dPcRMVHLiol22A4egvmbIiy0nGHCcbhYv4bXx3GnKtJLSM9bpsRgmQEybNHkHjjmdtOnNJoIaxN=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczOjlfog5xcNYk8vvrp_euAEFFkTqBoOj-QtPpCjICXU6W-Mo1seL1oo6-NJbzlDppEjVVrQnAdX1ZQ0kY-Hsr0g4TVB4F1-K7mzq6Z-Esy4qQn1IxjR=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczMYdPtm0jn0GohOzZvVyLCS-8drfEK1Zua_K145e0sKxEnwJ6PiVU8trl4rBbNykRPjKRE47oAR_3ZFqEa85ssBe9JUYLqCokguwojBbMXdMN-iS8IZ=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczNBINomIxtvkU0JThZPAiEXEZN0GOQIEmPXD5t43ccy55pKvYylspESJwy4uCfiZ_HgDA1kb0X9bghwhOJNjlWzmKxuBO61jBO6uBezFfKsm5jh-62E=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczM5cs1ACeqqXggmYNr0d0dKPTUpjGuLgdKdnnLQxkvttviSFBnnyB0B2-ECkXdsWHb6ITEGabcwMgwvP1x5_EAIPR0_HsknOGcAnDQvLXLUsQagy8Nd=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczMsFrLF-5Qc5B2Jeke5gvKGtX3WEnL-EvqXckHCiXoKcCRvtTKuSKKTg3SKegYFZGzBCSmciBvUelKDoP2n7hG5UO7RpkG4yCHd5T808QBaK-bg2hc0=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczOLGuMRTx5kyplBausrOegEX31anT_RG31DTQFl-lQwv7R04-BZrsCQFpPrV8eemFOW2dnQ0rfLcS6YuSL3zAphL7Dx_5r5cVgIiTAPG3IA9dPNvAPE=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczPTdRmdbXPs1dQsYaillq98s8Cc6bQZWV9IsffcYNJILaj3lbLcZYbU3KnuwkRHFB_NnzgXZL6Luz1-MgHpxSKRkHa_PD36XvxnEO1PbgsoIbJ5iaEM=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczMqchZ_y8sM8DZxEDARoyw3f13CBgP0recB-0Q7N3NB9WJ7m6GFInByramS8DeWjLsI6yNB-efcoXZFDdR0Ug465m2TdL09_Ple3dSnoIiofQtn7xVg=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczMn01N-1S-ynAaRnEiziOdGjnrafqTjdis3km4JWK-jQDI3pPgTJNBEBPEPLcO-o-Peh2yxUCvdNsJCs6GNhGZLLW-AvdwFn0uJlrtopX3-pzNdZjdK=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczPsaJ8cKZyUZ4EsIG0V77lvOKHnFDR5st5gjErNcvaXpCdeGgLq3uF4H-G6C_Pl4R7yH_hDDxg8FAm3d8WtZg1HI51WoYM-x5QV_JetoYYw_7i3Ny9M=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczObgCUaPgPk8Pl83CFbaC01e7v--6xeDR7uoj0CCWyZ2wPEN7imOzzeBfyOewXhvwJTZfBTsGlg0FdX91VpyHuHahgsGSWzqVEOydgft0-q2BnPz6UC=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczPTI-zOFwYOkZn4yZ7OVMY4-eFH-Fn1qzWh6_6JcLmPn_OSfMq8j4ZZgQj49rzfgZhpz4dFJ3Jf1TpcDbqJ5M3gxkke49RxSwhqEFxnF0yY696NqkBo=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczO-lqsfLZlyCghbwPqNkSPGq2B2nRNPBbRJbie_blFazDMFxJC5hVZ345DnvvSH_TnDjIg-l1kLq-T5odf5jO5KMfMkPZhbAUkr7i1voIp9X8eJDnIY=w720-h960-no',
+      'assets/prize-23.jpg',
+      'https://lh3.googleusercontent.com/pw/AP1GczNHEgNNUKzkf_OWaByufoCzTSGarlp62qTrz0CwMtbMOkxGCFxrPtwdy40eyta7mf9jjjGb8mFs6TYegoEEsBpcv0AfdQys_7pHoGi_Gx5RS6d3arXJ=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczP9RJ9Hz_iIYGVXH4tGiwPSHwoeqiBNmjgBcyDpAkZjN62Fpt6Ep2EsFTGoHG_l7psJUZ8wKKA_pywwbdfAk1z13SmY71YGLTEVfz1qmTy7SqtgvrRp=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczNBEJKUhaQETJvMsHM33k7N3ggDPCZQXZdxLvXZu2mxwG7pRWIpWrT0hWYx9BnaEqsvESYhtQRA3EmR9wYtN1bbtmQfbftFLhnZY_q5vAuUSBEBLPj4=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczM9_nunItLabsEOyIRVV1onpsLSiqkucvTbNQAjDIzTdU5OjXvkQ4UsyjHSQQHGO5kKUimEVR6EQfAEMDx3JZmxZML1qwNpl0aiGiv0aNptMeEQysEZ=w720-h960-no',
+      'https://lh3.googleusercontent.com/pw/AP1GczPlmK5DyawTW1GgVKl4Vx6pf_DjEaJDCmbkfDVfpKjS9-x7bb2sYRwAltM419aSvKx9_qZ606ihtc7RKQOnUHUfyCwnYZOzg5t_1u5N56PgThjRP6ch=w720-h960-no'
+    ];
+    const gallery = document.querySelector('#prize-gallery');
+    const lightbox = document.querySelector('#lightbox');
+    const lightboxImage = document.querySelector('#lightbox-image');
+    const lightboxCaption = document.querySelector('#lightbox-caption');
+    document.querySelector('#hero-image').src = imageUrls[0];
+    document.querySelector('#photo-count').textContent = `${imageUrls.length} prize photos`;
+    gallery.innerHTML = imageUrls.map((url, index) => `
+      <button class="prize" type="button" data-index="${index}" aria-label="Open prize photo ${index + 1}" style="animation-delay:${Math.min(index * 35, 500)}ms">
+        <img src="${url}" alt="2027 prize ${index + 1}" loading="${index < 8 ? 'eager' : 'lazy'}" referrerpolicy="no-referrer">
+        <span class="prize-label"><span>Prize ${String(index + 1).padStart(2, '0')}</span><span>View</span></span>
+      </button>`).join('');
+    gallery.addEventListener('click', event => {
+      const button = event.target.closest('.prize');
+      if (!button) return;
+      const index = Number(button.dataset.index);
+      lightboxImage.src = imageUrls[index];
+      lightboxImage.alt = `2027 prize ${index + 1}`;
+      lightboxCaption.textContent = `Prize ${String(index + 1).padStart(2, '0')} of ${imageUrls.length}`;
+      lightbox.showModal();
+    });
+    document.querySelector('#close-lightbox').addEventListener('click', () => lightbox.close());
+    lightbox.addEventListener('click', event => { if (event.target === lightbox) lightbox.close(); });
+  </script>
+</body>
+</html>
