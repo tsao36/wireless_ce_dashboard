@@ -44,6 +44,22 @@ class LoadingQualityMonitorTests(unittest.TestCase):
         self.assertIn("old_active_issue", codes)
         self.assertIn("suspicious_non_customer_title", codes)
 
+    def test_ips_issue_without_valid_url_is_flagged(self):
+        payload = {
+            "generated_at": "2026-11-26T12:00:00+00:00",
+            "rows": [{
+                "name": "A",
+                "issue_details": [{
+                    "ips_case_number": "1039578",
+                    "ips_url": "",
+                    "ips_title": "Wi-Fi slow performance during validation",
+                    "issue_weight": 2.32,
+                }],
+            }],
+        }
+        report = audit_snapshot(payload, now=datetime(2026, 11, 26, 13, tzinfo=timezone.utc))
+        self.assertIn("missing_ips_url", {finding["code"] for finding in report["findings"]})
+
     def test_weighted_load_and_issue_count_are_reconciled(self):
         payload = {
             "generated_at": "2026-11-26T12:00:00+00:00",

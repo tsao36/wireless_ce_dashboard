@@ -194,6 +194,15 @@ def audit_snapshot(
                 ("jira", _text(issue.get("jira_id"))),
                 ("hsd", _text(issue.get("hsd_id"))),
             ]
+            ips_case_number = identifiers[0][1]
+            ips_url = _text(issue.get("ips_url"))
+            if ips_case_number and not re.match(r"^https://[^/]+", ips_url, re.IGNORECASE):
+                findings.append(_issue_finding(
+                    issue,
+                    owner,
+                    "missing_ips_url",
+                    "IPS issue is missing a valid HTTPS source URL, so its dashboard identifier cannot be linked.",
+                ))
             if not any(value for _kind, value in identifiers):
                 findings.append(_issue_finding(issue, owner, "missing_issue_identifier", "Issue has no IPS, Jira, or HSD identifier."))
             for kind, value in identifiers:
