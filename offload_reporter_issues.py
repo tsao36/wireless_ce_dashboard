@@ -537,11 +537,11 @@ def _bug_status_custom_open_expr(columns: set[str]) -> str:
 
     return (
         "(CASE "
+        f"WHEN {ips_closed} THEN FALSE "
         f"WHEN {has_jira_status} AND {jira_closed_custom} THEN FALSE "
         f"WHEN {has_jira_status} AND NOT {jira_closed_custom} THEN TRUE "
         f"WHEN {has_hsd_status} AND {hsd_closed} THEN FALSE "
         f"WHEN {has_hsd_status} AND {hsd_openish} THEN TRUE "
-        f"WHEN {ips_closed} THEN FALSE "
         f"WHEN {ips_openish} THEN TRUE "
         "ELSE TRUE END)"
     )
