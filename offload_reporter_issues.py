@@ -457,6 +457,12 @@ def _ips_without_jira_link_expr(columns: set[str]) -> str:
     return f"({jira_key_expr}) IS NULL" if jira_key_expr != "NULL" else "TRUE"
 
 
+def _jira_exposure_allowed_expr(columns: set[str]) -> str:
+    if not _has(columns, "jira_exposure"):
+        return "TRUE"
+    return "LOWER(TRIM(COALESCE(jira_exposure::text, ''))) <> '4-low'"
+
+
 def _get_table_columns(db: DbConnector, table: str) -> set[str]:
     schema, name = _split_table(table)
     cache_key = (schema, name)
@@ -726,7 +732,7 @@ def _get_reporter_current_counts(
     else:
         jira_id_expr = _jira_key_expr(columns)
     if jira_id_expr != "NULL":
-        jira_count_cond = f"{jira_id_expr} IS NOT NULL"
+        jira_count_cond = f"({jira_id_expr}) IS NOT NULL AND ({_jira_exposure_allowed_expr(columns)})"
         if _has(columns, "ips_status"):
             ips_status_norm = "LOWER(TRIM(COALESCE(NULLIF(ips_status::text, 'NA'), '')))"
             jira_count_cond = f"({jira_count_cond}) AND ({ips_status_norm} <> 'closed')"
@@ -1014,7 +1020,7 @@ def _get_reporter_current_breakdown(
     else:
         jira_id_expr = _jira_key_expr(columns)
     if jira_id_expr != "NULL":
-        jira_count_cond = f"{jira_id_expr} IS NOT NULL"
+        jira_count_cond = f"({jira_id_expr}) IS NOT NULL AND ({_jira_exposure_allowed_expr(columns)})"
         if _has(columns, "ips_status"):
             ips_status_norm = "LOWER(TRIM(COALESCE(NULLIF(ips_status::text, 'NA'), '')))"
             jira_count_cond = f"({jira_count_cond}) AND ({ips_status_norm} <> 'closed')"
@@ -2328,7 +2334,7 @@ def _get_unpromoted_ips_rows_for_weighting(
 
     jira_id_expr = _jira_key_expr(columns)
     if jira_id_expr != "NULL":
-        jira_count_cond = f"{jira_id_expr} IS NOT NULL"
+        jira_count_cond = f"({jira_id_expr}) IS NOT NULL AND ({_jira_exposure_allowed_expr(columns)})"
         if _has(columns, "ips_status"):
             ips_status_norm = "LOWER(TRIM(COALESCE(NULLIF(ips_status::text, 'NA'), '')))"
             jira_count_cond = f"({jira_count_cond}) AND ({ips_status_norm} <> 'closed')"

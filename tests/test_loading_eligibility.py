@@ -42,6 +42,13 @@ class LoadingTitleTests(unittest.TestCase):
                 )
         self.assertEqual(offload._title_expr(set()), "NULL")
 
+    def test_low_jira_exposure_is_excluded_when_column_exists(self):
+        self.assertEqual(
+            offload._jira_exposure_allowed_expr({"jira_exposure"}),
+            "LOWER(TRIM(COALESCE(jira_exposure::text, ''))) <> '4-low'",
+        )
+        self.assertEqual(offload._jira_exposure_allowed_expr(set()), "TRUE")
+
 
 class LoadingSummaryChartTests(unittest.TestCase):
     def test_group_charts_highlight_wifi_and_bt_leaders(self):
