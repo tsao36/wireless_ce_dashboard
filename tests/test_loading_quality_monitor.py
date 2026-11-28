@@ -12,6 +12,29 @@ class LoadingQualityMonitorTests(unittest.TestCase):
             "tag_only_title",
         )
 
+    def test_tag_only_warning_explains_loading_risk_and_action(self):
+        payload = {
+            "generated_at": "2026-11-26T12:00:00+00:00",
+            "rows": [{
+                "name": "A",
+                "issue_details": [{
+                    "ips_case_number": "1035972",
+                    "ips_title": "[HP][Huaqin][OB3][TWL][AX211][Win11]",
+                    "category": "Audio",
+                    "issue_weight": 2.28,
+                    "created": "2026-11-20",
+                }],
+            }],
+        }
+
+        report = audit_snapshot(payload, now=datetime(2026, 11, 26, 13, tzinfo=timezone.utc))
+        finding = next(item for item in report["findings"] if item["code"] == "tag_only_title")
+
+        self.assertIn("does not state the symptom", finding["message"])
+        self.assertIn("Audio", finding["message"])
+        self.assertIn("2.28", finding["message"])
+        self.assertIn("open the source issue", finding["message"].lower())
+
     def test_descriptive_title_is_accepted(self):
         self.assertIsNone(inspect_title("[HP][Win11] Wi-Fi disconnects after waking from sleep"))
 

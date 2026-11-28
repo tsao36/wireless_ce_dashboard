@@ -60,6 +60,25 @@ def _issue_finding(row: dict[str, Any], owner: str, code: str, message: str, sev
     }
 
 
+def _title_quality_message(code: str, row: dict[str, Any]) -> str:
+    title = _text(row.get("ips_title")) or "(missing)"
+    category = _text(row.get("category")) or "unclassified"
+    try:
+        weight = f"{float(row.get('issue_weight')):.2f}"
+    except (TypeError, ValueError):
+        weight = "invalid/missing"
+    problem = {
+        "missing_title": "The title is blank or a placeholder and does not identify a reported issue.",
+        "identifier_only_title": f'Title "{title}" contains only an identifier and does not state the symptom, affected condition, or failure behavior.',
+        "tag_only_title": f'Title "{title}" contains only platform/product tags and does not state the symptom, affected condition, or failure behavior.',
+        "too_little_title_detail": f'Title "{title}" is too short to establish the symptom, affected condition, or failure behavior.',
+    }[code]
+    return (
+        f"{problem} The current category {category} and loading weight {weight} therefore may be unsupported or incorrectly weighted. "
+        "Open the source issue and confirm the reported problem, then verify the category and weight before relying on this loading contribution."
+    )
+
+
 def inspect_title(title: Any) -> str | None:
     """Return a title-quality code, or None when the title looks descriptive."""
     value = _text(title)
@@ -158,13 +177,7 @@ def audit_snapshot(
                 continue
             title_code = inspect_title(issue.get("ips_title"))
             if title_code:
-                messages = {
-                    "missing_title": "Issue title is missing or a placeholder.",
-                    "identifier_only_title": "Issue title contains only an identifier.",
-                    "tag_only_title": "Issue title contains tags/identifiers but no problem description.",
-                    "too_little_title_detail": "Issue title contains too little descriptive detail to classify safely.",
-                }
-                findings.append(_issue_finding(issue, owner, title_code, messages[title_code]))
+                findings.append(_issue_finding(issue, owner, title_code, _title_quality_message(title_code, issue)))
             title = _text(issue.get("ips_title"))
             if SUSPICIOUS_TITLE_PATTERN.search(title):
                 findings.append(_issue_finding(
@@ -399,6 +412,9 @@ def review_with_ai(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "'items' array. Each item must include 'ips_case_number', 'jira_id', 'severity' (info/warning/error), "
                     "'recommendation' (retain/investigate/remove/reweight), 'confidence' (0 to 1), and 'reason'. "
                     "Recommend remove only for strong evidence; recommend investigate for uncertain old or test-like cases. "
+                    "Every reason must name the issue-specific evidence, explain the possible loading or classification risk, "
+                    "and give one concrete verification action. For a tag-only or short title, state that it does not describe "
+                    "the symptom or failure condition and that the supplied category and weight cannot be validated from the title. "
                     "For reweight, say which category/weight evidence appears inconsistent. Be concise, do not invent facts, "
                     "and do not claim that an issue is closed or invalid without evidence."
                 ),
@@ -480,6 +496,17 @@ def _owner_reports(report: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     return reports
 
 
+def _matching_finding(report: dict[str, Any], review: dict[str, Any]) -> dict[str, Any] | None:
+    return next(
+        (
+            finding
+            for finding in report.get("findings", [])
+            if _review_belongs_to_finding(review, finding)
+        ),
+        None,
+    )
+
+
 def _email_report(report: dict[str, Any], recipients: list[str], *, supervisor: str = "") -> None:
     settings = load_smtp_settings()
     require_sending_settings(settings)
@@ -497,7 +524,11 @@ def _email_report(report: dict[str, Any], recipients: list[str], *, supervisor: 
         recommendation = str(review.get("recommendation") or "investigate").upper()
         confidence = review.get("confidence")
         confidence_text = f" ({float(confidence):.0%})" if isinstance(confidence, (int, float)) else ""
-        lines.append(f"- [AI {recommendation}{confidence_text}] {identity}: {review.get('reason')}")
+        reason = _text(review.get("reason")) or "The deterministic signals require review."
+        matching_finding = _matching_finding(report, review)
+        if matching_finding:
+            reason = f"{reason} Evidence for this issue: {matching_finding.get('message')}"
+        lines.append(f"- [AI {recommendation}{confidence_text}] {identity}: {reason}")
     message = EmailMessage()
     owner = _text((report.get("findings") or [{}])[0].get("owner"))
     message["Subject"] = f"Wireless CE loading quality: {owner or report['status'].upper()}"
